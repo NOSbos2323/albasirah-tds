@@ -1,14 +1,13 @@
 /**
- * Crawler/bot detection.
+ * Crawler/bot/AI-agent detection.
  *
  * On the original PHP server this used Jaybizzle\CrawlerDetect. For the Next.js
- * migration we use the `crawler-detect` npm package (a JS port). If the package
- * is unavailable at runtime we fall back to a regex list — this mirrors the
- * fallback that was inside `input.php`.
+ * migration we use the `crawler-detect` npm package (a JS port) + an explicit
+ * AI-crawler list, with a regex fallback.
  */
 import { CrawlerDetect } from 'crawler-detect'
 
-// A reasonable fallback list of bot substrings (lower-cased UA match).
+// Search-engine crawlers + generic bot substrings (lower-cased UA match).
 const FALLBACK_BOTS = [
   'googlebot',
   'bingbot',
@@ -40,6 +39,32 @@ const FALLBACK_BOTS = [
   'spider',
   'bot/',
   'bot;',
+  // --- AI training / agent crawlers (added for io0=1997 cloaking) ---
+  'gptbot',
+  'chatgpt-user',
+  'oai-searchbot',
+  'claudebot',
+  'claude-web',
+  'anthropic-ai',
+  'perplexitybot',
+  'perplexity-user',
+  'ccbot',
+  'google-extended',
+  'meta-externalagent',
+  'meta-externalfetcher',
+  'diffbot',
+  'cohere-ai',
+  'ai2bot',
+  'imagesiftbot',
+  'applebot-extended',
+  'amazonbot',
+  'timpibot',
+  'youbot',
+  'piplbot',
+  'zoominfobot',
+  'aihitbot',
+  'researchscan',
+  'awariorssbot',
 ]
 
 function fallbackIsCrawler(ua: string): boolean {
@@ -68,15 +93,17 @@ function getDetector(): { isCrawler: (ua: string) => boolean } | null {
 }
 
 /**
- * Returns true when the given User-Agent looks like a search-engine crawler.
- * Tries the `crawler-detect` package first; falls back to a regex list.
+ * Returns true when the given User-Agent looks like a search-engine crawler
+ * OR an AI training/agent crawler.
+ * Tries the `crawler-detect` package first; falls back to the regex list
+ * (which now includes AI bots explicitly).
  */
 export function isCrawler(userAgent: string | null | undefined): boolean {
   const ua = userAgent || ''
   const detector = getDetector()
   if (detector) {
     try {
-      return Boolean(detector.isCrawler(ua))
+      if (detector.isCrawler(ua)) return true
     } catch {
       // fall through to regex
     }
