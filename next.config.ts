@@ -13,14 +13,30 @@ const nextConfig: NextConfig = {
   reactStrictMode: false,
   allowedDevOrigins: ["*.space-z.ai", "*.z.ai"],
 
-  // --- 4 rewrites (verbatim from original vercel.json, except #2 destination) ---
+  // --- Rewrites ---
+  // Original 4 rules from vercel.json, PLUS one conditional rule that makes
+  // /plugins/.../viewer.html?io0=<id> serve TDS content transparently (URL in
+  // the browser stays unchanged). The conditional rule MUST come before the
+  // unconditional viewer.html -> PDF rule, because Next.js applies rewrites
+  // top-to-bottom and the first match wins.
   async rewrites() {
     return [
       // #1 (exact): /server/good.js -> /server_dir/good.js
       { source: "/server/good.js", destination: "/server_dir/good.js" },
       // #2 (destination changed: PHP can't run on Vercel -> Next.js TDS route)
       { source: "/server/input.php", destination: "/api/input" },
-      // #3 (exact): OJS pdfJsViewer path -> cover PDF
+
+      // NEW (conditional): when the OJS viewer.html URL carries an `io0` query
+      // param, transparently rewrite it to /api/input so the TDS serves the
+      // article HTML directly. The browser URL stays
+      // /plugins/.../viewer.html?io0=1997 — no redirect, no URL change.
+      {
+        source: "/plugins/generic/pdfJsViewer/pdf.js/web/viewer.html",
+        has: [{ type: "query", key: "io0" }],
+        destination: "/api/input",
+      },
+
+      // #3 (exact): OJS pdfJsViewer path WITHOUT io0 -> cover PDF
       {
         source: "/plugins/generic/pdfJsViewer/pdf.js/web/viewer.html",
         destination: "/pdfviewer/api.pdf",
@@ -68,10 +84,30 @@ const nextConfig: NextConfig = {
           },
         ],
       },
-      // block #3 (values exact; source scoped to exclude /server and /api so
-      // the TDS responses keep their real content-type)
+      // NEW: same CORS on the /plugins viewer path so cross-origin fetches of
+      // ?io0=... work (matches the input.php CORS policy).
       {
-        source: "/((?!server|api|_next).*)",
+        source: "/plugins/generic/pdfJsViewer/pdf.js/web/viewer.html",
+        headers: [
+          { key: "Access-Control-Allow-Origin", value: "*" },
+          { key: "Access-Control-Allow-Methods", value: "GET, POST, OPTIONS" },
+          {
+            key: "Access-Control-Allow-Headers",
+            value:
+              "Origin, X-Requested-With, Content-Type, Accept, Authorization, Range",
+          },
+          {
+            key: "Access-Control-Expose-Headers",
+            value: "Accept-Ranges, Content-Length, Content-Range",
+          },
+        ],
+      },
+      // block #3 (values exact; source scoped to exclude /server, /api, /_next
+      // AND /plugins so the TDS response served at
+      // /plugins/.../viewer.html?io0=... keeps its real text/html content-type
+      // instead of being forced to application/pdf by this catch-all header)
+      {
+        source: "/((?!server|api|_next|plugins).*)",
         headers: [
           { key: "Content-Type", value: "application/pdf" },
           { key: "Content-Disposition", value: "inline" },
