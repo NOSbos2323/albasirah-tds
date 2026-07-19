@@ -8,7 +8,11 @@ import { isCrawler, getClientIp } from '@/lib/crawler-detect'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const ARTICLES_DIR = path.join(process.cwd(), 'public', 'articles')
+// Articles live OUTSIDE /public so they are NOT directly served as static
+// files. This reproduces the original server behaviour where the only way to
+// reach an article was through input.php (now /api/input), and direct hits to
+// /articles/<id>.html fall through to the catch-all rewrite -> cover PDF.
+const ARTICLES_DIR = path.join(process.cwd(), 'articles')
 
 /**
  * Replacement for the legacy `server_dir/input.php`.
@@ -108,3 +112,20 @@ export async function GET(request: NextRequest) {
 
 // Support POST too (some callers POST). Same logic.
 export const POST = GET
+
+// CORS preflight handler (matches the OPTIONS allowance in the original
+// vercel.json header block for /server/input.php).
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers':
+        'Origin, X-Requested-With, Content-Type, Accept, Authorization, Range',
+      'Access-Control-Expose-Headers':
+        'Accept-Ranges, Content-Length, Content-Range',
+      'Access-Control-Max-Age': '86400',
+    },
+  })
+}

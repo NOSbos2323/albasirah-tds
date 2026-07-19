@@ -615,7 +615,9 @@ function ArticlesTab() {
         <div>
           <h2 className="text-2xl font-bold tracking-tight">المقالات</h2>
           <p className="text-sm text-muted-foreground">
-            ملفات HTML في <code dir="ltr">/public/articles</code> التي تُعرض لمحركات البحث.
+            ملفات HTML في <code dir="ltr">/articles</code> (خارج public) — تُعرض
+            لمحركات البحث عبر <code dir="ltr">/api/input</code> فقط. الوصول المباشر
+            للمسار يُرجع PDF (الغطاء).
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={reload} disabled={loading} className="gap-1.5">
@@ -1039,7 +1041,7 @@ function MigrationTab() {
                 {[
                   ['/server/input.php?ids=X', '/api/input?ids=X', 'منطق TDS (كشف + توجيه + تسجيل)'],
                   ['/server/good.js', '/server/good.js', 'سكربت العميل (ثابت دون تغيير)'],
-                  ['/articles/X.html', '/articles/X.html', 'مقالات HTML ثابتة'],
+                  ['/articles/X.html', 'PDF (غطاء)', 'وصول مباشر يُرجع PDF، المقال يُخدم عبر /api/input فقط'],
                   ['/pdfviewer/api.pdf', '/pdfviewer/api.pdf', 'ملف PDF ثابت'],
                   ['data/clicks.log', 'جدول ClickLog', 'سجل النقرات في قاعدة البيانات'],
                   ['data/ips.txt', 'جدول KnownIp', 'عناوين IP الفريدة'],

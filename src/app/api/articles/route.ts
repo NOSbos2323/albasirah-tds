@@ -7,11 +7,15 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 /**
- * Lists every article HTML file in /public/articles, joined with its redirect
+ * Lists every article HTML file in /articles, joined with its redirect
  * rule (if any) so the dashboard can show coverage at a glance.
+ *
+ * NOTE: articles live at project root (NOT under /public) so they cannot be
+ * fetched directly — direct /articles/<id>.html hits fall through to the
+ * catch-all rewrite and return the cover PDF, exactly like the original server.
  */
 export async function GET() {
-  const dir = path.join(process.cwd(), 'public', 'articles')
+  const dir = path.join(process.cwd(), 'articles')
   let files: string[] = []
   try {
     files = await fs.readdir(dir)
