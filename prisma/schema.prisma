@@ -1,21 +1,18 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL_UNPOOLED")
 }
 
-// A redirect rule: maps an article id -> a destination URL for human visitors.
-// Crawlers always see the static HTML article (cloaking for SEO).
+// باقي الجداول الخاصة بك تبقى كما هي دون تغيير:
 model RedirectRule {
   id        String   @id @default(cuid())
-  articleId String   @unique // the `ids` query param value, e.g. "2002037"
-  targetUrl String   // where humans get sent
+  articleId String   @unique 
+  targetUrl String   
   note      String?
   active    Boolean  @default(true)
   clicks    Int      @default(0)
@@ -25,14 +22,12 @@ model RedirectRule {
   @@index([articleId])
 }
 
-// Distinct visitor IPs (mirrors the old data/ips.txt behaviour: log once per IP).
 model KnownIp {
   id        String   @id @default(cuid())
   ip        String   @unique
   createdAt DateTime @default(now())
 }
 
-// Append-only click log (one row per human redirect hit) for richer analytics.
 model ClickLog {
   id        String   @id @default(cuid())
   articleId String
@@ -45,7 +40,6 @@ model ClickLog {
   @@index([createdAt])
 }
 
-// Keep the original User/Post models untouched in case other code uses them.
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
