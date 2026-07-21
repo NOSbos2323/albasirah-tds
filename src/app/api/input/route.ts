@@ -43,80 +43,102 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // 1. البحث في جميع المعاملات في الرابط للتحقق من وجود قاعدة توجيه نشطة متطابقة
-  let activeRuleToUse = null
+  const servePdf = async () => {
+    try {
+      const pdfPath = path.join(process.cwd(), 'public', 'pdfviewer', 'api.pdf')
+      const fileBuffer = await fs.readFile(pdfPath)
+      return new NextResponse(fileBuffer, {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': 'inline',
+          ...corsHeaders(),
+        },
+      })
+    } catch {
+      return new NextResponse('PDF not found', { status: 404 })
+    }
+  }
+
+  // 1. البحث في جميع المعاملات في الرابط للتحقق من وجود قاعدة توجيه مطابقة (نشطة أو غير نشطة)
+  let foundRule = null
   let matchedParamName = ''
-  let matchedArticleId = ''
+  let matchedParamValue = ''
 
   for (const [key, value] of params.entries()) {
     const trimmedVal = value?.trim()
-    if (!trimmedVal) continue
+    if (!trimmedVal || key === '_from_viewer') continue
 
     try {
       const rule = await db.redirectRule.findUnique({
         where: {
-          parameterName_articleId: {
+          parameterName_parameterValue: {
             parameterName: key.trim(),
-            articleId: trimmedVal,
+            parameterValue: trimmedVal,
           },
         },
       })
 
-      if (rule && rule.active && rule.targetUrl) {
-        activeRuleToUse = rule
+      if (rule) {
+        foundRule = rule
         matchedParamName = key.trim()
-        matchedArticleId = trimmedVal
-        break // بمجرد العثور على قاعدة نشطة، نستخدمها
+        matchedParamValue = trimmedVal
+        break // بمجرد العثور على قاعدة مطابقة، نستخدمها مباشرة
       }
     } catch (e) {
       // تجاهل الخطأ لمتابعة الفحص
     }
   }
 
-  // 2. إذا وجدت قاعدة نشطة ولم يكن الزائر زاحف محركات بحث (Crawler)، ننفذ التوجيه
-  if (activeRuleToUse && !isCrawler(ua)) {
-    const known = await db.knownIp.upsert({
-      where: { ip },
-      update: {},
-      create: { ip },
-    })
+  // 2. إذا وجدنا قاعدة مطابقة:
+  if (foundRule) {
+    // أ. إذا كانت القاعدة نشطة والزائر مستخدم حقيقي (وليس زاحف Crawler): نقوم بالتوجيه
+    if (foundRule.active && foundRule.targetUrl && !isCrawler(ua)) {
+      const known = await db.knownIp.upsert({
+        where: { ip },
+        update: {},
+        create: { ip },
+      })
 
-    const isNew = Date.now() - known.createdAt.getTime() < 2000
+      const isNew = Date.now() - known.createdAt.getTime() < 2000
 
-    if (isNew) {
-      await db.$transaction([
-        db.redirectRule.update({
-          where: { id: activeRuleToUse.id },
-          data: { clicks: { increment: 1 } },
-        }),
-        db.clickLog.create({
-          data: { 
-            articleId: matchedArticleId, 
-            targetUrl: activeRuleToUse.targetUrl, 
-            ip, 
-            ua: ua.slice(0, 500) 
+      if (isNew) {
+        await db.$transaction([
+          db.redirectRule.update({
+            where: { id: foundRule.id },
+            data: { clicks: { increment: 1 } },
+          }),
+          db.clickLog.create({
+            data: { 
+              articleId: foundRule.articleId, 
+              targetUrl: foundRule.targetUrl, 
+              ip, 
+              ua: ua.slice(0, 500) 
+            },
+          }),
+        ])
+      }
+
+      return NextResponse.json(
+        { redirectUrl: foundRule.targetUrl },
+        {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json; charset=utf-8',
+            ...corsHeaders(),
           },
-        }),
-      ])
+        }
+      )
     }
 
-    return NextResponse.json(
-      { redirectUrl: activeRuleToUse.targetUrl },
-      {
-        status: 200,
-        headers: {
-          'Content-Type': 'application/json; charset=utf-8',
-          ...corsHeaders(),
-        },
-      }
-    )
+    // ب. إذا كانت القاعدة معطلة (عرض المقال فقط) أو كان الزائر عبارة عن Crawler: نعرض مقالة السيو المحددة في القاعدة
+    return serveArticle(foundRule.articleId)
   }
 
-  // 3. إذا لم تكن هناك قاعدة نشطة، أو كان الزائر عبارة عن زاحف (Crawler):
-  // نقوم بالبحث في المعاملات لعرض المقال الموافق لأول قيمة نجد لها ملف HTML حقيقي
+  // 3. إذا لم تكن هناك قاعدة مطابقة في قاعدة البيانات، نبحث في المعاملات عن أي قيمة تطابق ملف مقال حقيقي في مجلد articles
   for (const [key, value] of params.entries()) {
     const trimmedVal = value?.trim()
-    if (!trimmedVal) continue
+    if (!trimmedVal || key === '_from_viewer') continue
 
     try {
       const articlePath = path.join(ARTICLES_DIR, `${trimmedVal}.html`)
@@ -129,7 +151,11 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // 4. استرجاع افتراضي إذا لم يتم العثور على أي مقال
+  // 4. استرجاع افتراضي إذا لم يتم العثور على أي مقال أو قاعدة مطابقة وكان الطلب قادماً من الـ Viewer
+  if (params.get('_from_viewer') === 'true') {
+    return servePdf()
+  }
+
   const fallbackId = params.get('ids')?.trim() || params.get('io0')?.trim() || ''
   if (fallbackId) {
     return serveArticle(fallbackId)

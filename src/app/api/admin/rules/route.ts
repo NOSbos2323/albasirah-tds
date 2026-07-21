@@ -43,30 +43,31 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { articleId, targetUrl, note, active, parameterName } = body
+    const { articleId, targetUrl, note, active, parameterName, parameterValue } = body
 
     const finalParamName = parameterName?.trim() || 'io0'
+    const finalParamValue = parameterValue?.trim() || ''
 
-    if (!articleId || !targetUrl) {
+    if (!articleId || !targetUrl || !finalParamValue) {
       return NextResponse.json(
-        { success: false, error: 'Article ID and Target URL are required' },
+        { success: false, error: 'Article ID, Parameter Value, and Target URL are required' },
         { status: 400 }
       )
     }
 
-    // Check if redirect rule already exists for this parameter and article ID combination
+    // Check if redirect rule already exists for this parameter name and value combination
     const existing = await db.redirectRule.findUnique({
       where: {
-        parameterName_articleId: {
+        parameterName_parameterValue: {
           parameterName: finalParamName,
-          articleId: articleId.trim(),
+          parameterValue: finalParamValue,
         },
       },
     })
 
     if (existing) {
       return NextResponse.json(
-        { success: false, error: `A redirect rule already exists for Parameter: ${finalParamName} and Article ID: ${articleId}` },
+        { success: false, error: `A redirect rule already exists for Parameter: ${finalParamName}=${finalParamValue}` },
         { status: 400 }
       )
     }
@@ -74,10 +75,11 @@ export async function POST(request: NextRequest) {
     const newRule = await db.redirectRule.create({
       data: {
         parameterName: finalParamName,
+        parameterValue: finalParamValue,
         articleId: articleId.trim(),
         targetUrl: targetUrl.trim(),
         note: note || '',
-        active: active === true, // Default to inactive or false as per "لا يحدث اعادة توجيه الا اذا طلبت انا"
+        active: active === true, // Default to inactive/false as per "لا يحدث اعادة توجيه الا اذا طلبت انا"
         clicks: 0,
       },
     })
@@ -94,7 +96,7 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json()
-    const { id, targetUrl, note, active, clicks, parameterName } = body
+    const { id, targetUrl, note, active, clicks, parameterName, parameterValue, articleId } = body
 
     if (!id) {
       return NextResponse.json(
@@ -107,6 +109,8 @@ export async function PATCH(request: NextRequest) {
       where: { id },
       data: {
         ...(parameterName !== undefined && { parameterName: parameterName.trim() }),
+        ...(parameterValue !== undefined && { parameterValue: parameterValue.trim() }),
+        ...(articleId !== undefined && { articleId: articleId.trim() }),
         ...(targetUrl !== undefined && { targetUrl: targetUrl.trim() }),
         ...(note !== undefined && { note }),
         ...(active !== undefined && { active }),

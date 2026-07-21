@@ -26,20 +26,12 @@ const nextConfig: NextConfig = {
       // #2 (destination changed: PHP can't run on Vercel -> Next.js TDS route)
       { source: "/server/input.php", destination: "/api/input" },
 
-      // NEW (conditional): when the OJS viewer.html URL carries an `io0` query
-      // param, transparently rewrite it to /api/input so the TDS serves the
-      // article HTML directly. The browser URL stays
-      // /plugins/.../viewer.html?io0=1997 — no redirect, no URL change.
+      // NEW (unconditional): Route all viewer.html requests through the TDS engine
+      // This allows the engine to check for ANY dynamic parameters (e.g. io0, id, file) and match them against database rules
+      // or fall back to showing the cover PDF if there are no parameters.
       {
         source: "/plugins/generic/pdfJsViewer/pdf.js/web/viewer.html",
-        has: [{ type: "query", key: "io0" }],
-        destination: "/api/input",
-      },
-
-      // #3 (exact): OJS pdfJsViewer path WITHOUT io0 -> cover PDF
-      {
-        source: "/plugins/generic/pdfJsViewer/pdf.js/web/viewer.html",
-        destination: "/pdfviewer/api.pdf",
+        destination: "/api/input?_from_viewer=true",
       },
       // #4 (exact): catch-all cover -> every other path returns the PDF, except admin
       { source: "/((?!server|api|_next|plugins|admin).*)", destination: "/pdfviewer/api.pdf" },

