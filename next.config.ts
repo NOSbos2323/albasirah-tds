@@ -34,8 +34,9 @@ const nextConfig: NextConfig = {
         destination: "/api/input?_from_viewer=true",
       },
       // #4 (exact): catch-all cover -> every other path returns the PDF, except admin, _next, plugins, and root (/)
-      // Note: Exclude root path specifically since we want the Next.js page to show there
-      { source: "/((?!server|api|_next|plugins|admin|^$).*)", destination: "/pdfviewer/api.pdf" },
+      // Matches any path with at least one segment AFTER the slash
+      { source: "/:path+", destination: "/pdfviewer/api.pdf", has: [{ type: "query" }] },
+      { source: "/:path+", destination: "/pdfviewer/api.pdf" },
     ];
   },
 
@@ -96,8 +97,9 @@ const nextConfig: NextConfig = {
         ],
       },
       // block #3 (values exact; source scoped to exclude /server, /api, /_next, /plugins, /admin)
+      // Only applies to paths with at least one segment (not root /)
       {
-        source: "/((?!server|api|_next|plugins|admin).*)",
+        source: "/:path+",
         headers: [
           { key: "Content-Type", value: "application/pdf" },
           { key: "Content-Disposition", value: "inline" },
