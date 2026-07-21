@@ -457,7 +457,7 @@ export default function AdminPage() {
 
                 <div className="bg-indigo-50/70 rounded-lg p-3 border border-indigo-100 text-xxs text-indigo-900 leading-relaxed font-mono">
                   <div className="font-bold mb-1">🔗 الرابط المستعمل للزوار والمقالات:</div>
-                  <div className="break-all select-all font-bold text-indigo-600">
+                  <div className="break-all select-all font-bold text-indigo-600 text-left" dir="ltr">
                     ?{parameterName || 'io0'}={parameterValue || '12345'}
                   </div>
                 </div>
