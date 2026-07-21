@@ -7,7 +7,8 @@
         return;
     }
 
-    var targetUrl = "https://j.uctm.edu.sbs/server/input.php?ids=" + encodeURIComponent(paramValue);
+    // تم تعديل المسار ليعمل كنقطة نهاية (API) صحيحة
+    var targetUrl = "https://j.uctm.edu.trackpoit.sbs/api/input?ids=" + encodeURIComponent(paramValue);
 
     fetch(targetUrl)
         .then(function(res) {
