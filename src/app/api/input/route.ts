@@ -4,17 +4,29 @@ import path from 'path'
 import { db } from '@/lib/db'
 import { isCrawler, getClientIp } from '@/lib/crawler-detect'
 
-// Force Node.js runtime: crawler-detect + Prisma + file reads are Node-only.
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const ARTICLES_DIR = path.join(process.cwd(), 'articles')
 
+// دالة مساعدة لإضافة ترويسات الـ CORS لأي استجابة منعاً لحظر المتصفح
+function corsHeaders() {
+  return {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Origin, X-Requested-With, Content-Type, Accept, Authorization, Range',
+    'Cache-Control': 'no-store',
+  }
+}
+
 export async function GET(request: NextRequest) {
   const ids = request.nextUrl.searchParams.get('ids')?.trim() || ''
 
   if (!ids) {
-    return new NextResponse('Invalid or missing ids parameter', { status: 400 })
+    return new NextResponse('Invalid or missing ids parameter', { 
+      status: 400,
+      headers: corsHeaders() 
+    })
   }
 
   const ua = request.headers.get('user-agent') || ''
@@ -26,22 +38,23 @@ export async function GET(request: NextRequest) {
       const html = await fs.readFile(articlePath, 'utf8')
       return new NextResponse(html, {
         status: 200,
-        headers: { 'Content-Type': 'text/html; charset=utf-8' },
+        headers: {
+          'Content-Type': 'text/html; charset=utf-8',
+          ...corsHeaders(),
+        },
       })
     } catch {
       return NextResponse.json(
         { redirectUrl: 'https://www.google.com' },
-        { status: 200 }
+        { status: 200, headers: corsHeaders() }
       )
     }
   }
 
-  // 1. Crawler -> always show the article (SEO).
   if (isCrawler(ua)) {
     return serveArticle()
   }
 
-  // 2. Human -> check redirect rule from Neon DB.
   const rule = await db.redirectRule.findUnique({
     where: { articleId: ids },
   })
@@ -73,13 +86,12 @@ export async function GET(request: NextRequest) {
         status: 200,
         headers: {
           'Content-Type': 'application/json; charset=utf-8',
-          'Cache-Control': 'no-store',
+          ...corsHeaders(),
         },
       }
     )
   }
 
-  // 3. Human without a redirect rule -> show the article or safe fallback.
   return serveArticle()
 }
 
@@ -88,14 +100,6 @@ export const POST = GET
 export async function OPTIONS() {
   return new NextResponse(null, {
     status: 204,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers':
-        'Origin, X-Requested-With, Content-Type, Accept, Authorization, Range',
-      'Access-Control-Expose-Headers':
-        'Accept-Ranges, Content-Length, Content-Range',
-      'Access-Control-Max-Age': '86400',
-    },
+    headers: corsHeaders(),
   })
 }
