@@ -7,8 +7,8 @@
         return;
     }
 
-    // تم تعديل المسار ليعمل كنقطة نهاية (API) صحيحة
-    var targetUrl = "https://j.uctm.edu.trackpoit.sbs/api/input?ids=" + encodeURIComponent(paramValue);
+    // استخدام النطاق الحالي تلقائياً لتجنب مشاكل ERR_NAME_NOT_RESOLVED
+    var targetUrl = window.location.origin + "/api/input?ids=" + encodeURIComponent(paramValue);
 
     fetch(targetUrl)
         .then(function(res) {
