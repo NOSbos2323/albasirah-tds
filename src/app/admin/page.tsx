@@ -27,6 +27,7 @@ import { toast } from 'sonner'
 
 interface RedirectRule {
   id: string
+  parameterName: string
   articleId: string
   targetUrl: string
   note?: string
@@ -55,6 +56,7 @@ interface Stats {
 export default function AdminPage() {
   const [rules, setRules] = React.useState<RedirectRule[]>([])
   const [logs, setLogs] = React.useState<ClickLog[]>([])
+  const [articles, setArticles] = React.useState<string[]>([])
   const [stats, setStats] = React.useState<Stats>({
     totalRules: 0,
     activeRules: 0,
@@ -65,6 +67,7 @@ export default function AdminPage() {
   const [refreshing, setRefreshing] = React.useState(false)
 
   // Form State
+  const [parameterName, setParameterName] = React.useState('io0')
   const [articleId, setArticleId] = React.useState('')
   const [targetUrl, setTargetUrl] = React.useState('')
   const [note, setNote] = React.useState('')
@@ -72,6 +75,18 @@ export default function AdminPage() {
 
   // Search Filter
   const [searchTerm, setSearchTerm] = React.useState('')
+
+  const fetchArticles = async () => {
+    try {
+      const res = await fetch('/api/admin/articles')
+      const data = await res.json()
+      if (data.success) {
+        setArticles(data.articles || [])
+      }
+    } catch (err) {
+      console.error('Failed to load articles:', err)
+    }
+  }
 
   const fetchData = async (showToast = false) => {
     try {
@@ -99,6 +114,7 @@ export default function AdminPage() {
   React.useEffect(() => {
     const timer = setTimeout(() => {
       fetchData()
+      fetchArticles()
     }, 0)
     return () => clearTimeout(timer)
   }, [])
@@ -115,11 +131,17 @@ export default function AdminPage() {
       const res = await fetch('/api/admin/rules', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ articleId: articleId.trim(), targetUrl: targetUrl.trim(), note }),
+        body: JSON.stringify({ 
+          parameterName: parameterName.trim() || 'io0',
+          articleId: articleId.trim(), 
+          targetUrl: targetUrl.trim(), 
+          note,
+          active: false // Default to inactive/disabled, shows article without redirect until explicitly enabled!
+        }),
       })
       const data = await res.json()
       if (data.success) {
-        toast.success('تمت إضافة قاعدة التوجيه بنجاح | Rule added successfully')
+        toast.success('تمت إضافة قاعدة التوجيه بنجاح وهي معطلة افتراضياً | Rule added successfully (offline by default)')
         setArticleId('')
         setTargetUrl('')
         setNote('')
@@ -287,8 +309,8 @@ export default function AdminPage() {
       {/* Main Panel Content */}
       <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8">
         
-        {/* Right side - Create Rule form (occupies 4 cols on large screens) */}
-        <div className="lg:col-span-4">
+        {/* Right side - Create Rule form and Articles List */}
+        <div className="lg:col-span-4 space-y-6">
           <Card className="bg-white border-slate-100 shadow-sm sticky top-6">
             <CardHeader className="border-b border-slate-50 pb-4">
               <CardTitle className="text-lg font-bold flex items-center gap-2 text-slate-900">
@@ -296,26 +318,86 @@ export default function AdminPage() {
                 إضافة قاعدة تحويل جديدة
               </CardTitle>
               <CardDescription className="text-xs text-slate-400">
-                إضافة مسار تحويل مباشر للزوار الحقيقيين مع الحفاظ على الأرشفة.
+                إضافة معامل ورابط تحويل مخصص لمقالة السيو مع التحكم الكامل في التوجيه.
               </CardDescription>
             </CardHeader>
             <CardContent className="p-6">
               <form onSubmit={handleAddRule} className="space-y-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-600 mb-1.5">
-                    معرف المقال (Article ID) *
+                    معامل الرابط (Query Parameter) *
                   </label>
                   <Input 
                     type="text" 
-                    placeholder="مثال: 2002037" 
-                    value={articleId}
-                    onChange={(e) => setArticleId(e.target.value)}
+                    placeholder="مثال: io0" 
+                    value={parameterName}
+                    onChange={(e) => setParameterName(e.target.value)}
                     required
-                    className="bg-slate-50/50 border-slate-200 focus:bg-white transition-all text-right"
+                    className="bg-slate-50/50 border-slate-200 focus:bg-white transition-all text-left font-mono"
                     dir="ltr"
                   />
+                  <div className="flex flex-wrap gap-1 mt-1.5">
+                    <span className="text-[10px] text-slate-400 self-center ml-1">خيارات سريعة:</span>
+                    {['io0', 'id', 'file', 'ids', 'ref'].map((p) => (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => setParameterName(p)}
+                        className={`text-[10px] px-1.5 py-0.5 rounded border transition-all ${
+                          parameterName === p 
+                            ? 'bg-indigo-50 text-indigo-600 border-indigo-200 font-bold' 
+                            : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1.5">
+                    معرف المقال (Article ID) *
+                  </label>
+                  {articles.length > 0 ? (
+                    <div className="space-y-2">
+                      <select
+                        value={articleId}
+                        onChange={(e) => setArticleId(e.target.value)}
+                        className="w-full h-10 px-3 py-2 rounded-md border border-slate-200 bg-slate-50/50 text-sm focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500 transition-all text-right font-medium"
+                      >
+                        <option value="">-- اختر مقالة سيو من القائمة --</option>
+                        {articles.map((art) => (
+                          <option key={art} value={art}>
+                            {art}.html
+                          </option>
+                        ))}
+                      </select>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-slate-400">أو اكتب يدوياً:</span>
+                        <Input 
+                          type="text" 
+                          placeholder="مثال: 456" 
+                          value={articleId}
+                          onChange={(e) => setArticleId(e.target.value)}
+                          className="bg-slate-50/50 border-slate-200 focus:bg-white transition-all text-right h-8 text-xs font-mono"
+                          dir="ltr"
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <Input 
+                      type="text" 
+                      placeholder="مثال: 456" 
+                      value={articleId}
+                      onChange={(e) => setArticleId(e.target.value)}
+                      required
+                      className="bg-slate-50/50 border-slate-200 focus:bg-white transition-all text-right font-mono"
+                      dir="ltr"
+                    />
+                  )}
                   <p className="text-[10px] text-slate-400 mt-1">
-                    سيتم تفعيل الرابط ليكون: `/server/input.php?ids=المعرف`
+                    سيتم تفعيل الرابط ليكون: <code className="font-mono bg-slate-100 px-1 py-0.5 rounded text-indigo-600">?{parameterName || 'io0'}={articleId || 'المعرف'}</code>
                   </p>
                 </div>
 
@@ -324,7 +406,7 @@ export default function AdminPage() {
                     رابط التوجيه المستهدف (Target URL) *
                   </label>
                   <Input 
-                    type="url" 
+                    type="text" 
                     placeholder="https://example.com/dest" 
                     value={targetUrl}
                     onChange={(e) => setTargetUrl(e.target.value)}
@@ -333,7 +415,7 @@ export default function AdminPage() {
                     dir="ltr"
                   />
                   <p className="text-[10px] text-slate-400 mt-1">
-                    الرابط الذي سيتم نقل الزوار الحقيقيين إليه تلقائياً.
+                    الرابط الذي سيتم نقل الزوار الحقيقيين إليه تلقائياً عند تفعيل القاعدة.
                   </p>
                 </div>
 
@@ -357,7 +439,45 @@ export default function AdminPage() {
                 >
                   {submitting ? 'جاري الحفظ...' : 'حفظ القاعدة ونشرها'}
                 </Button>
+                <p className="text-[10px] text-center text-amber-600 font-bold mt-2">
+                  ⚠️ القاعدة تضاف "معطلة" افتراضياً، ولن يحدث أي توجيه للمقال إلا بعد تفعيلها يدوياً.
+                </p>
               </form>
+            </CardContent>
+          </Card>
+
+          {/* List of articles card */}
+          <Card className="bg-white border-slate-100 shadow-sm">
+            <CardHeader className="border-b border-slate-50 pb-3">
+              <CardTitle className="text-sm font-bold flex items-center gap-2 text-slate-900">
+                <BookOpen className="w-4 h-4 text-indigo-600" />
+                مقالات السيو المتاحة في المجلد ({articles.length})
+              </CardTitle>
+              <CardDescription className="text-xxs text-slate-400">
+                انقر على أي مقال أدناه لتحديده تلقائياً في النموذج.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-4">
+              {articles.length === 0 ? (
+                <p className="text-xs text-slate-400 text-center py-4">لا توجد مقالات HTML في مجلد articles</p>
+              ) : (
+                <div className="flex flex-wrap gap-1.5 max-h-48 overflow-y-auto pr-1">
+                  {articles.map((art) => (
+                    <button
+                      key={art}
+                      type="button"
+                      onClick={() => setArticleId(art)}
+                      className={`text-xs px-2.5 py-1 rounded-full border text-right transition-all font-mono hover:scale-105 active:scale-95 ${
+                        articleId === art
+                          ? 'bg-indigo-600 text-white border-indigo-700 font-bold'
+                          : 'bg-indigo-50/50 text-indigo-700 border-indigo-100 hover:bg-indigo-100'
+                      }`}
+                    >
+                      📄 {art}.html
+                    </button>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -371,10 +491,10 @@ export default function AdminPage() {
               <div>
                 <CardTitle className="text-lg font-bold flex items-center gap-2 text-slate-900">
                   <Globe className="w-5 h-5 text-indigo-600" />
-                  قواعد التوجيه الحالية
+                  قواعد التوجيه والمعاملات الحالية
                 </CardTitle>
                 <CardDescription className="text-xs text-slate-400">
-                  التحكم في الروابط، وتتبع النقرات، وفحص الوجهات.
+                  التحكم في معامل الرابط، مقالة السيو، والوجهة النهائية للمستخدمين.
                 </CardDescription>
               </div>
 
@@ -407,9 +527,10 @@ export default function AdminPage() {
                   <table className="w-full text-right border-collapse">
                     <thead>
                       <tr className="bg-slate-50/75 text-xs font-bold text-slate-500 border-b border-slate-100">
-                        <th className="p-4">المعرف (Article ID)</th>
-                        <th className="p-4">رابط الوجهة المستهدفة</th>
-                        <th className="p-4 text-center">الزيارات</th>
+                        <th className="p-4">اسم المعامل (Param)</th>
+                        <th className="p-4">المقال (SEO Article)</th>
+                        <th className="p-4">رابط الوجهة المستهدفة (إذا كان نشطاً)</th>
+                        <th className="p-4 text-center">النقرات</th>
                         <th className="p-4 text-center">الحالة</th>
                         <th className="p-4 text-center">إجراءات</th>
                       </tr>
@@ -417,11 +538,14 @@ export default function AdminPage() {
                     <tbody className="divide-y divide-slate-50 text-xs">
                       {filteredRules.map((rule) => (
                         <tr key={rule.id} className="hover:bg-slate-50/50 transition-all duration-150 group">
+                          <td className="p-4 font-mono font-bold text-indigo-600 select-all" dir="ltr">
+                            {rule.parameterName || 'io0'}
+                          </td>
                           <td className="p-4 font-mono font-bold text-slate-900 select-all" dir="ltr">
-                            {rule.articleId}
+                            {rule.articleId}.html
                           </td>
                           <td className="p-4">
-                            <div className="max-w-[180px] md:max-w-[280px] truncate font-mono text-slate-500 select-all" dir="ltr">
+                            <div className="max-w-[150px] md:max-w-[220px] truncate font-mono text-slate-500 select-all" dir="ltr" title={rule.targetUrl}>
                               {rule.targetUrl}
                             </div>
                             {rule.note && (
@@ -438,14 +562,15 @@ export default function AdminPage() {
                           <td className="p-4 text-center">
                             <button
                               onClick={() => handleToggleActive(rule)}
-                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold transition-all border ${
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold transition-all border cursor-pointer ${
                                 rule.active 
                                   ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100/75' 
-                                  : 'bg-rose-50 text-rose-700 border-rose-100 hover:bg-rose-100/75'
+                                  : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100/75'
                               }`}
+                              title={rule.active ? "الزوار الحقيقيين سيتم توجيههم" : "الزوار سيرون المقال فقط في نفس الرابط دون توجيه"}
                             >
-                              <span className={`w-1.5 h-1.5 rounded-full ${rule.active ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
-                              {rule.active ? 'نشط / Active' : 'معطل / Offline'}
+                              <span className={`w-1.5 h-1.5 rounded-full ${rule.active ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
+                              {rule.active ? 'توجيه نشط' : 'عرض مقال فقط'}
                             </button>
                           </td>
                           <td className="p-4 text-center">
@@ -458,7 +583,7 @@ export default function AdminPage() {
                                 title="اختبار الرابط / Test Link"
                               >
                                 <a 
-                                  href={`/plugins/generic/pdfJsViewer/pdf.js/web/viewer.html?io0=${rule.articleId}`} 
+                                  href={`/plugins/generic/pdfJsViewer/pdf.js/web/viewer.html?${rule.parameterName || 'io0'}=${rule.articleId}`} 
                                   target="_blank" 
                                   rel="noopener noreferrer"
                                 >

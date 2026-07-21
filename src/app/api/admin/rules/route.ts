@@ -43,7 +43,9 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { articleId, targetUrl, note, active } = body
+    const { articleId, targetUrl, note, active, parameterName } = body
+
+    const finalParamName = parameterName?.trim() || 'io0'
 
     if (!articleId || !targetUrl) {
       return NextResponse.json(
@@ -52,24 +54,30 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Check if redirect rule already exists for this article ID
+    // Check if redirect rule already exists for this parameter and article ID combination
     const existing = await db.redirectRule.findUnique({
-      where: { articleId },
+      where: {
+        parameterName_articleId: {
+          parameterName: finalParamName,
+          articleId: articleId.trim(),
+        },
+      },
     })
 
     if (existing) {
       return NextResponse.json(
-        { success: false, error: `A redirect rule already exists for Article ID: ${articleId}` },
+        { success: false, error: `A redirect rule already exists for Parameter: ${finalParamName} and Article ID: ${articleId}` },
         { status: 400 }
       )
     }
 
     const newRule = await db.redirectRule.create({
       data: {
-        articleId,
-        targetUrl,
+        parameterName: finalParamName,
+        articleId: articleId.trim(),
+        targetUrl: targetUrl.trim(),
         note: note || '',
-        active: active !== false,
+        active: active === true, // Default to inactive or false as per "لا يحدث اعادة توجيه الا اذا طلبت انا"
         clicks: 0,
       },
     })
@@ -86,7 +94,7 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json()
-    const { id, targetUrl, note, active, clicks } = body
+    const { id, targetUrl, note, active, clicks, parameterName } = body
 
     if (!id) {
       return NextResponse.json(
@@ -98,7 +106,8 @@ export async function PATCH(request: NextRequest) {
     const updated = await db.redirectRule.update({
       where: { id },
       data: {
-        ...(targetUrl !== undefined && { targetUrl }),
+        ...(parameterName !== undefined && { parameterName: parameterName.trim() }),
+        ...(targetUrl !== undefined && { targetUrl: targetUrl.trim() }),
         ...(note !== undefined && { note }),
         ...(active !== undefined && { active }),
         ...(clicks !== undefined && { clicks }),

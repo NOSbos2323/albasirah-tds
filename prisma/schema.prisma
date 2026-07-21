@@ -9,15 +9,17 @@ datasource db {
 
 // باقي الجداول الخاصة بك تبقى كما هي دون تغيير:
 model RedirectRule {
-  id        String   @id @default(cuid())
-  articleId String   @unique 
-  targetUrl String   
-  note      String?
-  active    Boolean  @default(true)
-  clicks    Int      @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            String   @id @default(cuid())
+  parameterName String   @default("io0")
+  articleId     String
+  targetUrl     String   
+  note          String?
+  active        Boolean  @default(false)
+  clicks        Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
+  @@unique([parameterName, articleId])
   @@index([articleId])
 }
 
