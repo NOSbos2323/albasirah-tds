@@ -33,8 +33,9 @@ const nextConfig: NextConfig = {
         source: "/plugins/generic/pdfJsViewer/pdf.js/web/viewer.html",
         destination: "/api/input?_from_viewer=true",
       },
-      // #4 (exact): catch-all cover -> every other path returns the PDF, except admin
-      { source: "/((?!server|api|_next|plugins|admin).*)", destination: "/pdfviewer/api.pdf" },
+      // #4 (exact): catch-all cover -> every other path returns the PDF, except admin, _next, plugins, and root (/)
+      // Note: Exclude root path specifically since we want the Next.js page to show there
+      { source: "/((?!server|api|_next|plugins|admin|^$).*)", destination: "/pdfviewer/api.pdf" },
     ];
   },
 
@@ -94,9 +95,7 @@ const nextConfig: NextConfig = {
           },
         ],
       },
-      // block #3 (values exact; source scoped to exclude /server, /api, /_next,
-      // /plugins AND /admin so that the TDS response and admin dashboard retain
-      // their native content-type instead of being forced to application/pdf)
+      // block #3 (values exact; source scoped to exclude /server, /api, /_next, /plugins, /admin)
       {
         source: "/((?!server|api|_next|plugins|admin).*)",
         headers: [
