@@ -57,6 +57,8 @@ server.log
 # --- Sandbox-specific (do NOT ship to GitHub/Vercel) ---
 # Local SQLite database (dev only — Vercel uses Postgres/KV)
 /db/*.db
+/prisma/*.db
+/prisma/*.db-journal
 /db/*.db-journal
 # Sandbox gateway + build infra
 Caddyfile

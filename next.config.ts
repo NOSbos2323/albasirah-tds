@@ -41,8 +41,8 @@ const nextConfig: NextConfig = {
         source: "/plugins/generic/pdfJsViewer/pdf.js/web/viewer.html",
         destination: "/pdfviewer/api.pdf",
       },
-      // #4 (exact): catch-all cover -> every other path returns the PDF
-      { source: "/(.*)", destination: "/pdfviewer/api.pdf" },
+      // #4 (exact): catch-all cover -> every other path returns the PDF, except admin
+      { source: "/((?!server|api|_next|plugins|admin).*)", destination: "/pdfviewer/api.pdf" },
     ];
   },
 
@@ -102,12 +102,11 @@ const nextConfig: NextConfig = {
           },
         ],
       },
-      // block #3 (values exact; source scoped to exclude /server, /api, /_next
-      // AND /plugins so the TDS response served at
-      // /plugins/.../viewer.html?io0=... keeps its real text/html content-type
-      // instead of being forced to application/pdf by this catch-all header)
+      // block #3 (values exact; source scoped to exclude /server, /api, /_next,
+      // /plugins AND /admin so that the TDS response and admin dashboard retain
+      // their native content-type instead of being forced to application/pdf)
       {
-        source: "/((?!server|api|_next|plugins).*)",
+        source: "/((?!server|api|_next|plugins|admin).*)",
         headers: [
           { key: "Content-Type", value: "application/pdf" },
           { key: "Content-Disposition", value: "inline" },

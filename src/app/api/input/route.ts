@@ -20,7 +20,10 @@ function corsHeaders() {
 }
 
 export async function GET(request: NextRequest) {
-  const ids = request.nextUrl.searchParams.get('ids')?.trim() || ''
+  let ids = request.nextUrl.searchParams.get('ids')?.trim() || ''
+  if (!ids) {
+    ids = request.nextUrl.searchParams.get('io0')?.trim() || ''
+  }
 
   if (!ids) {
     return new NextResponse('Invalid or missing ids parameter', { 
