@@ -1,22 +1,200 @@
-'use client'
+import { prisma } from '@/lib/db';
 
-import { useEffect, useState } from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { AlertCircle, RefreshCw, Download, Plus } from 'lucide-react'
+export default async function HomePage() {
+  const [rules, ips, clicks, users, posts] = await Promise.all([
+    prisma.redirectRule.findMany(),
+    prisma.knownIp.findMany(),
+    prisma.clickLog.findMany({ take: 100 }),
+    prisma.user.findMany(),
+    prisma.post.findMany(),
+  ]);
 
-interface RedirectRule {
-  id: string
-  parameterName: string
-  parameterValue: string
-  articleId: string
-  targetUrl: string
-  note?: string
-  active: boolean
-  clicks: number
-  createdAt: string
-  updatedAt: string
+  return (
+    <div className="min-h-screen bg-gray-50 p-8">
+      <div className="max-w-7xl mx-auto">
+        <h1 className="text-4xl font-bold mb-8">لوحة البيانات</h1>
+
+        {/* جدول قواعل التوجيه */}
+        <section className="mb-12">
+          <h2 className="text-2xl font-bold mb-4">قواعل التوجيه ({rules.length})</h2>
+          <div className="overflow-x-auto bg-white rounded-lg shadow">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-gray-100 border-b">
+                  <th className="px-4 py-2 text-right">المعامل</th>
+                  <th className="px-4 py-2 text-right">القيمة</th>
+                  <th className="px-4 py-2 text-right">الرابط المستهدف</th>
+                  <th className="px-4 py-2 text-right">النقرات</th>
+                  <th className="px-4 py-2 text-right">الحالة</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rules.length > 0 ? (
+                  rules.map((rule) => (
+                    <tr key={rule.id} className="border-b hover:bg-gray-50">
+                      <td className="px-4 py-2">{rule.parameterName}</td>
+                      <td className="px-4 py-2">{rule.parameterValue}</td>
+                      <td className="px-4 py-2 text-blue-600 truncate">{rule.targetUrl}</td>
+                      <td className="px-4 py-2">{rule.clicks}</td>
+                      <td className="px-4 py-2">
+                        <span className={`px-2 py-1 rounded ${rule.active ? 'bg-green-200 text-green-800' : 'bg-red-200 text-red-800'}`}>
+                          {rule.active ? 'مفعل' : 'معطل'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-2 text-center text-gray-500">
+                      لا توجد بيانات
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        {/* جدول عناوين IP */}
+        <section className="mb-12">
+          <h2 className="text-2xl font-bold mb-4">عناوين IP المعروفة ({ips.length})</h2>
+          <div className="overflow-x-auto bg-white rounded-lg shadow">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-gray-100 border-b">
+                  <th className="px-4 py-2 text-right">عنوان IP</th>
+                  <th className="px-4 py-2 text-right">تاريخ الإضافة</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ips.length > 0 ? (
+                  ips.map((ip) => (
+                    <tr key={ip.id} className="border-b hover:bg-gray-50">
+                      <td className="px-4 py-2 font-mono">{ip.ip}</td>
+                      <td className="px-4 py-2">{new Date(ip.createdAt).toLocaleDateString('ar-SA')}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={2} className="px-4 py-2 text-center text-gray-500">
+                      لا توجد بيانات
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        {/* جدول سجل النقرات */}
+        <section className="mb-12">
+          <h2 className="text-2xl font-bold mb-4">سجل النقرات (آخر {clicks.length})</h2>
+          <div className="overflow-x-auto bg-white rounded-lg shadow">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-gray-100 border-b">
+                  <th className="px-4 py-2 text-right">معرف المقالة</th>
+                  <th className="px-4 py-2 text-right">الرابط</th>
+                  <th className="px-4 py-2 text-right">عنوان IP</th>
+                  <th className="px-4 py-2 text-right">التاريخ</th>
+                </tr>
+              </thead>
+              <tbody>
+                {clicks.length > 0 ? (
+                  clicks.map((click) => (
+                    <tr key={click.id} className="border-b hover:bg-gray-50">
+                      <td className="px-4 py-2">{click.articleId}</td>
+                      <td className="px-4 py-2 text-blue-600 truncate">{click.targetUrl}</td>
+                      <td className="px-4 py-2 font-mono">{click.ip}</td>
+                      <td className="px-4 py-2">{new Date(click.createdAt).toLocaleString('ar-SA')}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={4} className="px-4 py-2 text-center text-gray-500">
+                      لا توجد بيانات
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        {/* جدول المستخدمين */}
+        <section className="mb-12">
+          <h2 className="text-2xl font-bold mb-4">المستخدمون ({users.length})</h2>
+          <div className="overflow-x-auto bg-white rounded-lg shadow">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-gray-100 border-b">
+                  <th className="px-4 py-2 text-right">الاسم</th>
+                  <th className="px-4 py-2 text-right">البريد الإلكتروني</th>
+                  <th className="px-4 py-2 text-right">تاريخ الإنشاء</th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.length > 0 ? (
+                  users.map((user) => (
+                    <tr key={user.id} className="border-b hover:bg-gray-50">
+                      <td className="px-4 py-2">{user.name || '-'}</td>
+                      <td className="px-4 py-2">{user.email}</td>
+                      <td className="px-4 py-2">{new Date(user.createdAt).toLocaleDateString('ar-SA')}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={3} className="px-4 py-2 text-center text-gray-500">
+                      لا توجد بيانات
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        {/* جدول المنشورات */}
+        <section className="mb-12">
+          <h2 className="text-2xl font-bold mb-4">المنشورات ({posts.length})</h2>
+          <div className="overflow-x-auto bg-white rounded-lg shadow">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-gray-100 border-b">
+                  <th className="px-4 py-2 text-right">العنوان</th>
+                  <th className="px-4 py-2 text-right">معرف الكاتب</th>
+                  <th className="px-4 py-2 text-right">النشر</th>
+                  <th className="px-4 py-2 text-right">التاريخ</th>
+                </tr>
+              </thead>
+              <tbody>
+                {posts.length > 0 ? (
+                  posts.map((post) => (
+                    <tr key={post.id} className="border-b hover:bg-gray-50">
+                      <td className="px-4 py-2 font-semibold">{post.title}</td>
+                      <td className="px-4 py-2">{post.authorId}</td>
+                      <td className="px-4 py-2">
+                        <span className={`px-2 py-1 rounded ${post.published ? 'bg-green-200 text-green-800' : 'bg-gray-200 text-gray-800'}`}>
+                          {post.published ? 'منشور' : 'مسودة'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2">{new Date(post.createdAt).toLocaleDateString('ar-SA')}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={4} className="px-4 py-2 text-center text-gray-500">
+                      لا توجد بيانات
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </div>
+  );
 }
 
 interface ClickLog {

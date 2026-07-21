@@ -33,9 +33,8 @@ const nextConfig: NextConfig = {
         source: "/plugins/generic/pdfJsViewer/pdf.js/web/viewer.html",
         destination: "/api/input?_from_viewer=true",
       },
-      // #4 (exact): catch-all cover -> every other path returns the PDF, except admin, _next, plugins, and root (/)
+      // #4 (exact): catch-all cover -> every other path returns the PDF, except root (/)
       // Matches any path with at least one segment AFTER the slash
-      { source: "/:path+", destination: "/pdfviewer/api.pdf", has: [{ type: "query" }] },
       { source: "/:path+", destination: "/pdfviewer/api.pdf" },
     ];
   },
