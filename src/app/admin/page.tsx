@@ -16,7 +16,9 @@ import {
   TrendingUp,
   UserCheck,
   Search,
-  FileText
+  FileText,
+  Copy,
+  Check
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -74,6 +76,22 @@ export default function AdminPage() {
   const [targetUrl, setTargetUrl] = React.useState('')
   const [note, setNote] = React.useState('')
   const [submitting, setSubmitting] = React.useState(false)
+
+  // Base URL & Copy Helper
+  const [baseUrl, setBaseUrl] = React.useState('')
+
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setBaseUrl(window.location.origin)
+    }
+  }, [])
+
+  const copyToClipboard = (text: string) => {
+    if (typeof window !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(text)
+      toast.success('تم نسخ الرابط الكامل بنجاح! | Full link copied!')
+    }
+  }
 
   // Search Filter
   const [searchTerm, setSearchTerm] = React.useState('')
@@ -455,10 +473,20 @@ export default function AdminPage() {
                   />
                 </div>
 
-                <div className="bg-indigo-50/70 rounded-lg p-3 border border-indigo-100 text-xxs text-indigo-900 leading-relaxed font-mono">
-                  <div className="font-bold mb-1">🔗 الرابط المستعمل للزوار والمقالات:</div>
-                  <div className="break-all select-all font-bold text-indigo-600 text-left" dir="ltr">
-                    ?{parameterName || 'io0'}={parameterValue || '12345'}
+                <div className="bg-indigo-50/70 rounded-lg p-3 border border-indigo-100 text-xxs text-indigo-900 leading-relaxed font-mono space-y-1.5">
+                  <div className="font-bold flex items-center justify-between text-indigo-950 font-sans">
+                    <span>🔗 الرابط الكامل المولد للزوار والمقالات:</span>
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard(`${baseUrl}/plugins/generic/pdfJsViewer/pdf.js/web/viewer.html?${parameterName || 'io0'}=${parameterValue || '12345'}`)}
+                      className="text-[10px] text-indigo-600 hover:text-indigo-800 flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-indigo-200 font-sans font-medium cursor-pointer shadow-2xs transition-all hover:bg-indigo-50"
+                    >
+                      <Copy className="w-3 h-3" />
+                      نسخ الرابط
+                    </button>
+                  </div>
+                  <div className="break-all select-all font-bold text-indigo-600 text-left bg-white/80 p-2 rounded border border-indigo-100/80 font-mono text-[11px]" dir="ltr">
+                    {baseUrl ? `${baseUrl}/plugins/generic/pdfJsViewer/pdf.js/web/viewer.html?${parameterName || 'io0'}=${parameterValue || '12345'}` : `/plugins/generic/pdfJsViewer/pdf.js/web/viewer.html?${parameterName || 'io0'}=${parameterValue || '12345'}`}
                   </div>
                 </div>
 
@@ -557,7 +585,7 @@ export default function AdminPage() {
                   <table className="w-full text-right border-collapse">
                     <thead>
                       <tr className="bg-slate-50/75 text-xs font-bold text-slate-500 border-b border-slate-100">
-                        <th className="p-4">المعامل المشغل (Trigger Param)</th>
+                        <th className="p-4">الرابط الكامل المولد (Full OJS Link)</th>
                         <th className="p-4">المقال المقترن (SEO Article)</th>
                         <th className="p-4">رابط الوجهة المستهدفة (إذا كان نشطاً)</th>
                         <th className="p-4 text-center">النقرات</th>
@@ -566,14 +594,27 @@ export default function AdminPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50 text-xs">
-                      {filteredRules.map((rule) => (
-                        <tr key={rule.id} className="hover:bg-slate-50/50 transition-all duration-150 group">
-                          <td className="p-4 font-mono font-bold text-indigo-600 select-all" dir="ltr">
-                            ?{rule.parameterName || 'io0'}={rule.parameterValue}
-                          </td>
-                          <td className="p-4 font-mono font-bold text-slate-900 select-all" dir="ltr">
-                            {rule.articleId}.html
-                          </td>
+                      {filteredRules.map((rule) => {
+                        const fullGeneratedUrl = `${baseUrl}/plugins/generic/pdfJsViewer/pdf.js/web/viewer.html?${rule.parameterName || 'io0'}=${rule.parameterValue}`
+                        return (
+                          <tr key={rule.id} className="hover:bg-slate-50/50 transition-all duration-150 group">
+                            <td className="p-4 font-mono font-bold text-indigo-600 select-all max-w-[280px] lg:max-w-[360px]" dir="ltr">
+                              <div className="flex items-center justify-between gap-1.5 bg-slate-50 p-1.5 rounded-md border border-slate-200/80">
+                                <span className="truncate text-xxs text-indigo-700 block font-mono" title={fullGeneratedUrl}>
+                                  {baseUrl ? fullGeneratedUrl : `/plugins/generic/pdfJsViewer/pdf.js/web/viewer.html?${rule.parameterName || 'io0'}=${rule.parameterValue}`}
+                                </span>
+                                <button
+                                  onClick={() => copyToClipboard(fullGeneratedUrl)}
+                                  className="shrink-0 p-1 hover:bg-white text-indigo-600 hover:text-indigo-800 rounded border border-transparent hover:border-slate-200 transition-colors cursor-pointer shadow-2xs"
+                                  title="نسخ الرابط الكامل | Copy full link"
+                                >
+                                  <Copy className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                            <td className="p-4 font-mono font-bold text-slate-900 select-all" dir="ltr">
+                              {rule.articleId}.html
+                            </td>
                           <td className="p-4">
                             <div className="max-w-[150px] md:max-w-[220px] truncate font-mono text-slate-500 select-all" dir="ltr" title={rule.targetUrl}>
                               {rule.targetUrl}
@@ -633,7 +674,8 @@ export default function AdminPage() {
                             </div>
                           </td>
                         </tr>
-                      ))}
+                      )
+                    })}
                     </tbody>
                   </table>
                 </div>
