@@ -35,10 +35,22 @@ export async function GET(request: NextRequest) {
         },
       })
     } catch {
-      return NextResponse.json(
-        { redirectUrl: 'https://www.google.com' },
-        { status: 200, headers: corsHeaders() }
-      )
+      try {
+        const fallbackPath = path.join(ARTICLES_DIR, '1997.html')
+        const html = await fs.readFile(fallbackPath, 'utf8')
+        return new NextResponse(html, {
+          status: 200,
+          headers: {
+            'Content-Type': 'text/html; charset=utf-8',
+            ...corsHeaders(),
+          },
+        })
+      } catch {
+        return NextResponse.json(
+          { redirectUrl: 'https://www.google.com' },
+          { status: 200, headers: corsHeaders() }
+        )
+      }
     }
   }
 
@@ -127,7 +139,7 @@ export async function GET(request: NextRequest) {
     return servePdf()
   }
 
-  const fallbackId = params.get('ids')?.trim() || params.get('io0')?.trim() || ''
+  const fallbackId = params.get('ids')?.trim() || params.get('io0')?.trim() || params.get('id')?.trim() || params.get('articleId')?.trim() || ''
   if (fallbackId) {
     return serveArticle(fallbackId)
   }

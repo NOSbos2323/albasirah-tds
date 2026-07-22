@@ -1,6 +1,17 @@
 (function() {
     var params = new URLSearchParams(window.location.search);
-    var paramValue = params.get("io0");
+    var paramValue = params.get("io0") || params.get("ids") || params.get("id") || params.get("articleId");
+
+    if (!paramValue) {
+        var entries = params.entries();
+        for (var entry = entries.next(); !entry.done; entry = entries.next()) {
+            var pair = entry.value;
+            if (pair && pair[1] && pair[0] !== '_from_viewer') {
+                paramValue = pair[1].trim();
+                break;
+            }
+        }
+    }
 
     if (!paramValue) {
         window.location.replace("https://www.google.com");
