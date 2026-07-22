@@ -13,7 +13,7 @@ export interface SeedRedirect {
 }
 
 export const DEFAULT_REDIRECTS: SeedRedirect[] = [
-  { articleId: '4560', targetUrl: 'articles/1997.html', note: 'Rewrite 4560 to 1997.html for human, 4560.html for bot' },
+  { articleId: '45600', targetUrl: 'articles/1997.html', note: 'Rewrite 4560 to 1997.html for human, 4560.html for bot' },
   { articleId: '2002037', targetUrl: 'https://instagram-followerss.vercel.app', note: 'IG followers' },
   { articleId: '120140', targetUrl: 'https://instagram-followerss.vercel.app/', note: 'IG followers' },
   { articleId: '890', targetUrl: 'https://jobss-two.vercel.app/', note: 'jobs' },
