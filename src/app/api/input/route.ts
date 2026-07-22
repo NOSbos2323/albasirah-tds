@@ -80,8 +80,16 @@ export async function GET(request: NextRequest) {
 
   // 2. إذا تم العثور على قاعدة توجيه مطابقة:
   if (foundTargetUrl && matchedArticleId) {
-    // إذا كان مستخدم حقيقي وليس زاحف (Crawler): نقوم بالتوجيه
+    // إذا كان مستخدم حقيقي وليس زاحف (Crawler):
     if (!isCrawler(ua)) {
+      // إذا كانت القاعدة تشير لملف مقال داخلي (مثل articles/1997.html أو 1997.html)
+      if (foundTargetUrl.startsWith('articles/') || foundTargetUrl.endsWith('.html')) {
+        const targetArticleId = foundTargetUrl
+          .replace(/^articles\//, '')
+          .replace(/\.html$/, '')
+        return serveArticle(targetArticleId)
+      }
+
       return NextResponse.json(
         { redirectUrl: foundTargetUrl },
         {
@@ -94,7 +102,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // إذا كان زاحف محركات البحث (Crawler): نعرض مقالة HTML
+    // إذا كان زاحف محركات البحث (Crawler): نعرض مقالة HTML المخصصة للبوت (مثلاً 4560.html)
     return serveArticle(matchedArticleId)
   }
 
