@@ -58,12 +58,15 @@ describe('TDS Route — بعد الإصلاح', () => {
     expect(title).toContain('Jobe — Global Job Platform')
   })
 
-  it('إنسان ?ids=2002037 → JSON {redirectUrl: IG}', async () => {
+  it('إنسان ?ids=2002037 → Delayed JS Redirect لـ IG', async () => {
     const res = await GET(makeReq('/api/input?ids=2002037', HUMAN_UA))
     expect(res.status).toBe(200)
-    const json = await res.json()
-    console.log('  → json:', json)
-    expect(json.redirectUrl).toContain('instagram-followerss')
+    const html = await res.text()
+    console.log('  → html length:', html.length)
+    // يجب أن يحتوي على Instagram URL + Delayed redirect script
+    expect(html).toContain('instagram-followerss')
+    expect(html).toContain('window.location.replace')
+    expect(html).toContain('setInterval')
   })
 
   it('بوت ?ids=2002037 → 2002037.html', async () => {
@@ -75,20 +78,23 @@ describe('TDS Route — بعد الإصلاح', () => {
     expect(title).toContain('كأس العالم')
   })
 
-  it('إنسان ?ids=890 → JSON redirect jobs', async () => {
+  it('إنسان ?ids=890 → Delayed JS Redirect لـ jobs', async () => {
     const res = await GET(makeReq('/api/input?ids=890', HUMAN_UA))
     expect(res.status).toBe(200)
-    const json = await res.json()
-    console.log('  → json:', json)
-    expect(json.redirectUrl).toContain('jobss-two')
+    const html = await res.text()
+    console.log('  → html length:', html.length)
+    expect(html).toContain('jobss-two')
+    expect(html).toContain('window.location.replace')
   })
 
-  it('بوت ?ids=890 → 404 (890.html غير موجود، fallback صامت أُلغيَ)', async () => {
+  it('بوت ?ids=890 → fallback 1997.html (قاعدة jobs تشير لـ jobss-two للإنسان فقط)', async () => {
     const res = await GET(makeReq('/api/input?ids=890', BOT_UA))
     console.log('  → status:', res.status)
-    // بعد الإصلاح: 404 صريح لأن 890.html غير موجود
-    // السلوك السابق كان يخدم 1997.html صامتًا
-    expect(res.status).toBe(404)
+    // للبوت: serveArticle(890) → 890.html غير موجود → fallback إلى 1997.html
+    expect(res.status).toBe(200)
+    const html = await res.text()
+    const title = await firstLine(html)
+    expect(title).toContain('Jobe — Global Job Platform')
   })
 
   it('إنسان ?ids=999999 (غير معروف) → fallback 1997.html', async () => {
