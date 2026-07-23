@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { promises as fs } from 'fs'
 import path from 'path'
 import { DEFAULT_REDIRECTS } from '@/lib/redirects'
-import { isCrawler } from '@/lib/crawler-detect'
+import { isCrawler, isCrawlerDetailed } from '@/lib/crawler-detect'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -129,7 +129,12 @@ function pickArticleIdFromParams(params: URLSearchParams): string | null {
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams
   const ua = request.headers.get('user-agent') || ''
-  const bot = isCrawler(ua)
+  // نمرر الـ headers الكاملة لـ isCrawler ليتمكن من قراءة cf-bot و cf-bm
+  const detection = isCrawlerDetailed(ua, request.headers)
+  const bot = detection.isCrawler
+  if (bot) {
+    console.info(`[input] bot detected via ${detection.source} (${detection.detail})`)
+  }
 
   const articleId = pickArticleIdFromParams(params)
 

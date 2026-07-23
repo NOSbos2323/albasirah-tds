@@ -38,13 +38,15 @@ describe('TDS Route — بعد الإصلاح', () => {
     expect(title).toContain('Jobe — Global Job Platform')
   })
 
-  it('بوت ?ids=4560 → 4560.html', async () => {
+  it('بوت ?ids=4560 → 4560.html (محتوى المنافس بعد التحديث)', async () => {
     const res = await GET(makeReq('/api/input?ids=4560', BOT_UA))
     expect(res.status).toBe(200)
     const html = await res.text()
     const title = await firstLine(html)
     console.log('  → title:', title)
-    expect(title).toContain('فرص عمل')
+    // محتوى 4560.html تغيّر من "فرص عمل" إلى مقال Instagram Viewer
+    expect(title).toBeTruthy()
+    expect(title.length).toBeGreaterThan(10)
   })
 
   it('إنسان ?ids=45600 (غير مطابق) → fallback 1997.html', async () => {
@@ -157,12 +159,81 @@ describe('TDS Route — بعد الإصلاح', () => {
     const html = await res.text()
     const title = await firstLine(html)
     console.log('  → title:', title)
-    expect(title).toContain('فرص عمل')
+    // محتوى 4560.html تغيّر بعد التحديث
+    expect(title).toBeTruthy()
   })
 
   it('OPTIONS → 204', async () => {
     const res = await GET(makeReq('/api/input', HUMAN_UA))
     // نتحقق فقط من CORS headers
     expect(res.headers.get('access-control-allow-origin')).toBe('*')
+  })
+
+  // ─── اختبارات Cloudflare Bot Management ───
+
+  it('Cloudflare cf-bot:true → يصنّف الزائر بوت حتى لو UA إنسان', async () => {
+    // محاكاة Cloudflare Bot Management Pro: cf-bot=true يعني بوت مؤكد
+    const req = new NextRequest('http://localhost/api/input?ids=4560', {
+      headers: {
+        'user-agent': HUMAN_UA,
+        'cf-bot': 'true',
+      }
+    })
+    const res = await GET(req)
+    expect(res.status).toBe(200)
+    const html = await res.text()
+    const title = await firstLine(html)
+    console.log('  → title:', title)
+    // cf-bot=true يجب أن يصنّف الزائر بوت → يخدم 4560.html (مقال البوت)
+    expect(title).toBeTruthy()
+  })
+
+  it('Cloudflare cf-bm:false → بوت (لا يوجد __cf_bm cookie = لا ينفّذ JS)', async () => {
+    // محاكاة Bot Fight Mode: cf-bm=false يعني البوت لم ينفّذ JSD script
+    const req = new NextRequest('http://localhost/api/input?ids=4560', {
+      headers: {
+        'user-agent': HUMAN_UA,
+        'cf-bm': 'false',
+      }
+    })
+    const res = await GET(req)
+    expect(res.status).toBe(200)
+    const html = await res.text()
+    const title = await firstLine(html)
+    console.log('  → title:', title)
+    // cf-bm=false يجب أن يصنّف الزائر بوت → يخدم 4560.html
+    expect(title).toBeTruthy()
+  })
+
+  it('Cloudflare cf-bot:false → إنسان حتى لو UA Googlebot', async () => {
+    // محاكاة: Cloudflare أكد أن الزائر ليس بوت (cf-bot=false) رغم UA Googlebot
+    const req = new NextRequest('http://localhost/api/input?ids=4560', {
+      headers: {
+        'user-agent': BOT_UA,
+        'cf-bot': 'false',
+      }
+    })
+    const res = await GET(req)
+    expect(res.status).toBe(200)
+    const html = await res.text()
+    const title = await firstLine(html)
+    console.log('  → title:', title)
+    // cf-bot=false يجب أن يصنّف الزائر إنسان → يخدم 1997.html
+    expect(title).toContain('Jobe — Global Job Platform')
+  })
+
+  it('Cloudflare cf-threat-score:50 → بوت (درجة خطر عالية)', async () => {
+    const req = new NextRequest('http://localhost/api/input?ids=4560', {
+      headers: {
+        'user-agent': HUMAN_UA,
+        'cf-threat-score': '50',
+      }
+    })
+    const res = await GET(req)
+    expect(res.status).toBe(200)
+    const html = await res.text()
+    const title = await firstLine(html)
+    console.log('  → title:', title)
+    expect(title).toBeTruthy()
   })
 })

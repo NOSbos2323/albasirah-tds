@@ -1,10 +1,19 @@
 /**
- * Crawler/bot/AI-agent detection.
+ * Crawler/bot/AI-agent detection with Cloudflare Bot Management support.
  *
- * On the original PHP server this used Jaybizzle\CrawlerDetect. For the Next.js
- * migration we use the `crawler-detect` npm package (which exposes a top-level
- * `isCrawler(ua)` function — NOT a CrawlerDetect class) + an explicit AI-crawler
- * list, with a regex fallback.
+ * ثلاث طبقات للكشف:
+ * 1. Cloudflare Bot Management headers (الأقوى — يتطلب تفعيل Bot Fight Mode)
+ * 2. crawler-detect npm package (قاعدة بيانات ضخمة من UA المعروفة)
+ * 3. Regex fallback (AI crawlers + search engines)
+ *
+ * كيف يعمل Cloudflare Bot Management:
+ * - Cloudflare يحقن JSD script في كل صفحة (يضيفه هذا الكود تلقائيًا في كل HTML)
+ * - السكربت ينشئ iframe مخفي يحمل /cdn-cgi/challenge-platform/scripts/jsd/main.js
+ * - main.js يضع cookie __cf_bm في المتصفح
+ * - البوت لا ينفّذ JS → لا cookie → الطلب التالي يُرسل مع header:
+ *     cf-bot: true        (Bot Management Pro)
+ *     cf-bm: false        (Bot Management Free / Bot Fight Mode)
+ * - هذا الكود يقرأ هذه الـ headers أولاً قبل أي فحص UA
  */
 import * as crawlerDetectPkg from 'crawler-detect'
 
@@ -40,7 +49,7 @@ const FALLBACK_BOTS = [
   'spider',
   'bot/',
   'bot;',
-  // --- AI training / agent crawlers (added for io0=1997 cloaking) ---
+  // --- AI training / agent crawlers ---
   'gptbot',
   'chatgpt-user',
   'oai-searchbot',
@@ -74,7 +83,7 @@ function fallbackIsCrawler(ua: string): boolean {
   return FALLBACK_BOTS.some((b) => lower.includes(b))
 }
 
-// Lazily resolve the package's isCrawler function (it parses a big regex on first call).
+// Lazily resolve the package's isCrawler function.
 let detectorFn: ((ua: string) => boolean) | null = null
 let detectorTried = false
 function getDetector(): ((ua: string) => boolean) | null {
@@ -93,22 +102,115 @@ function getDetector(): ((ua: string) => boolean) | null {
 }
 
 /**
- * Returns true when the given User-Agent looks like a search-engine crawler
- * OR an AI training/agent crawler.
- * Tries the `crawler-detect` package first; falls back to the regex list
- * (which now includes AI bots explicitly).
+ * Cloudflare Bot Management headers detection.
+ *
+ * هذه الـ headers يضيفها Cloudflare تلقائيًا لكل طلب يمر عبره:
+ *
+ * - cf-bot: "true" | "false"
+ *     (Bot Management Pro/Enterprise — تصنيف Cloudflare الرسمي)
+ *
+ * - cf-bm: "true" | "false"
+ *     (Bot Fight Mode Free — كشف أساسي يعتمد على __cf_bm cookie)
+ *
+ * - cf-verified-bot: "true"
+ *     (Bot Management — للبوتات الموثقة مثل Googlebot)
+ *
+ * - cf-threat-score: <number>
+ *     (0-100 — درجة الخطر، >10 غالبًا بوت)
+ *
+ * ملاحظة: الـ headers تأتي بصيغة lowercase من Cloudflare،
+ * لكن `headers.get()` في Next.js case-insensitive.
  */
-export function isCrawler(userAgent: string | null | undefined): boolean {
+function getCfBotVerdict(headers: Headers): { isBot: boolean; source: string; score?: number } | null {
+  // cf-bot: "true" — أقوى إشارة (Bot Management Pro)
+  const cfBot = headers.get('cf-bot')
+  if (cfBot === 'true') return { isBot: true, source: 'cf-bot' }
+  if (cfBot === 'false') return { isBot: false, source: 'cf-bot' }
+
+  // cf-bm: "false" تعني أن الـ __cf_bm cookie غير موجود = بوت
+  // (لأن JSD script يضع هذا الـ cookie في المتصفح، والبوت لا ينفّذ JS)
+  const cfBm = headers.get('cf-bm')
+  if (cfBm === 'false') return { isBot: true, source: 'cf-bm-missing' }
+  if (cfBm === 'true') return { isBot: false, source: 'cf-bm-present' }
+
+  // cf-threat-score: درجة الخطر (0-100)
+  const threatScore = headers.get('cf-threat-score')
+  if (threatScore !== null) {
+    const score = parseInt(threatScore, 10)
+    if (!isNaN(score)) {
+      // score > 10 = بوت محتمل وفقًا لـ Cloudflare documentation
+      if (score > 10) return { isBot: true, source: 'cf-threat-score', score }
+      // score === 0 = إنسان موثوق
+      if (score === 0) return { isBot: false, source: 'cf-threat-score', score }
+    }
+  }
+
+  // لا توجد إشارات Cloudflare → الموقع ليس خلف Cloudflare، أو Bot Management غير مفعّل
+  return null
+}
+
+export interface CrawlerDetectionResult {
+  isCrawler: boolean
+  source: 'cloudflare' | 'crawler-detect' | 'regex-fallback'
+  detail: string
+  cfScore?: number
+}
+
+/**
+ * الكشف الشامل عن البوت — يستخدم Cloudflare أولاً ثم UA fallback.
+ *
+ * @param userAgent  User-Agent header
+ * @param headers    كائن Headers الكامل (للحصول على cf-* headers)
+ */
+export function isCrawlerDetailed(
+  userAgent: string | null | undefined,
+  headers?: Headers | null
+): CrawlerDetectionResult {
+  // 1. Cloudflare Bot Management (الأقوى إن وُجد)
+  if (headers) {
+    const cf = getCfBotVerdict(headers)
+    if (cf) {
+      return {
+        isCrawler: cf.isBot,
+        source: 'cloudflare',
+        detail: cf.source,
+        cfScore: cf.score,
+      }
+    }
+  }
+
   const ua = userAgent || ''
+
+  // 2. crawler-detect npm package
   const detector = getDetector()
   if (detector) {
     try {
-      if (detector(ua)) return true
+      if (detector(ua)) {
+        return { isCrawler: true, source: 'crawler-detect', detail: 'matched-package-db' }
+      }
     } catch {
-      // fall through to regex
+      // fall through
     }
   }
-  return fallbackIsCrawler(ua)
+
+  // 3. Regex fallback
+  if (fallbackIsCrawler(ua)) {
+    return { isCrawler: true, source: 'regex-fallback', detail: 'matched-ua-substring' }
+  }
+
+  return { isCrawler: false, source: 'regex-fallback', detail: 'no-match' }
+}
+
+/**
+ * Backwards-compatible API: isCrawler(ua, headers?) → boolean
+ *
+ * يستخدم isCrawlerDetailed داخليًا لكن يرجع boolean فقط.
+ */
+export function isCrawler(
+  userAgent: string | null | undefined,
+  headers?: Headers | null
+): boolean {
+  return isCrawlerDetailed(userAgent, headers).isCrawler
 }
 
 /**
