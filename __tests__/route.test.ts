@@ -115,6 +115,30 @@ describe('TDS Route — بعد الإصلاح', () => {
     expect(title).toContain('Jobe — Global Job Platform')
   })
 
+  it('سيناريو المستخدم الرئيسي: ?io0=456 بـ UA إنسان → 1997.html', async () => {
+    // هذا هو السيناريو الذي أبلغ عنه المستخدم:
+    // https://j.uctm.edu/plugins/.../viewer.html?file=...&io0=456
+    // بعد redirect OJS إلى https://j.uctm.edu.trackpoint.sbs/?io0=456
+    // Vercel rewrite يجب أن يوجّه إلى /api/input
+    // والقاعدة الجديدة articleId='456' → targetUrl='articles/1997.html'
+    const res = await GET(makeReq('/api/input?io0=456', HUMAN_UA))
+    expect(res.status).toBe(200)
+    const html = await res.text()
+    const title = await firstLine(html)
+    console.log('  → title:', title)
+    expect(title).toContain('Jobe — Global Job Platform')
+  })
+
+  it('سيناريو المستخدم الرئيسي: ?io0=456 بـ UA Googlebot → 456.html', async () => {
+    const res = await GET(makeReq('/api/input?io0=456', BOT_UA))
+    expect(res.status).toBe(200)
+    const html = await res.text()
+    const title = await firstLine(html)
+    console.log('  → title:', title)
+    // 456.html موجود في public/articles — يجب أن يُخدم
+    expect(title).toBeTruthy()
+  })
+
   it('سيناريو URL المستخدم: ?file=...&io0=4560 (محاكاة rewrite المشاهد) → 1997.html', async () => {
     // هذا يختبر السيناريو الذي أبلغ عنه المستخدم:
     // /plugins/.../viewer.html?file=...&io0=4560 يُعاد كتابته إلى

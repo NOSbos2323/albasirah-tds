@@ -14,10 +14,10 @@ const nextConfig: NextConfig = {
   allowedDevOrigins: ["*.space-z.ai", "*.z.ai"],
 
   // --- Rewrites ---
-  // Original 4 rules from vercel.json, PLUS one conditional rule that makes
-  // /plugins/.../viewer.html?io0=<id> serve TDS content transparently (URL in
-  // the browser stays unchanged). The conditional rule MUST come before the
-  // unconditional viewer.html -> PDF rule, because Next.js applies rewrites
+  // Original 4 rules from vercel.json, PLUS conditional rules that make
+  // any request carrying an io0/ids/id/articleId query param flow through
+  // the TDS engine. The conditional rules MUST come before the
+  // unconditional catch-all (PDF cover), because Next.js applies rewrites
   // top-to-bottom and the first match wins.
   async rewrites() {
     return [
@@ -26,14 +26,58 @@ const nextConfig: NextConfig = {
       // #2 (destination changed: PHP can't run on Vercel -> Next.js TDS route)
       { source: "/server/input.php", destination: "/api/input" },
 
-      // NEW (unconditional): Route all viewer.html requests through the TDS engine
-      // This allows the engine to check for ANY dynamic parameters (e.g. io0, id, file) and match them against database rules
-      // or fall back to showing the cover PDF if there are no parameters.
+      // ─────────────────────────────────────────────────────────────
+      // CRITICAL: any request at "/" (or any path) that carries io0/ids/id
+      // in the query string must be routed to the TDS engine BEFORE the
+      // catch-all PDF rule fires. This is what makes:
+      //
+      //   https://j.uctm.edu.trackpoint.sbs/?io0=456
+      //
+      // (after OJS redirects there) actually serve 1997.html to humans
+      // and 456.html to bots, instead of being swallowed by the PDF
+      // catch-all.
+      // ─────────────────────────────────────────────────────────────
+      {
+        source: "/",
+        has: [{ type: "query", key: "io0" }],
+        destination: "/api/input",
+      },
+      {
+        source: "/",
+        has: [{ type: "query", key: "ids" }],
+        destination: "/api/input",
+      },
+      {
+        source: "/",
+        has: [{ type: "query", key: "id" }],
+        destination: "/api/input",
+      },
+      {
+        source: "/:path*",
+        has: [{ type: "query", key: "io0" }],
+        destination: "/api/input",
+      },
+      {
+        source: "/:path*",
+        has: [{ type: "query", key: "ids" }],
+        destination: "/api/input",
+      },
+      {
+        source: "/:path*",
+        has: [{ type: "query", key: "id" }],
+        destination: "/api/input",
+      },
+
+      // viewer.html always goes through TDS (so a human visiting it
+      // directly with io0 sees the article, not the cover PDF).
       {
         source: "/plugins/generic/pdfJsViewer/pdf.js/web/viewer.html",
         destination: "/api/input?_from_viewer=true",
       },
-      // #4 (exact): catch-all cover -> every other path returns the PDF, except admin
+
+      // #4 (catch-all): every other path returns the PDF cover.
+      // Excludes /server, /api, /_next, /plugins, /admin so those keep
+      // their native content types.
       { source: "/((?!server|api|_next|plugins|admin).*)", destination: "/pdfviewer/api.pdf" },
     ];
   },
