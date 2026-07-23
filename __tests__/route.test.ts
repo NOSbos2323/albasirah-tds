@@ -115,6 +115,27 @@ describe('TDS Route — بعد الإصلاح', () => {
     expect(title).toContain('Jobe — Global Job Platform')
   })
 
+  it('سيناريو URL المستخدم: ?file=...&io0=4560 (محاكاة rewrite المشاهد) → 1997.html', async () => {
+    // هذا يختبر السيناريو الذي أبلغ عنه المستخدم:
+    // /plugins/.../viewer.html?file=...&io0=4560 يُعاد كتابته إلى
+    // /api/input?_from_viewer=true&file=...&io0=4560
+    const res = await GET(makeReq('/api/input?_from_viewer=true&file=%2Findex.php%2Findex%2Flogin%2FsignOut%3Fsource%3D.trackpoint.sbs&io0=4560', HUMAN_UA))
+    expect(res.status).toBe(200)
+    const html = await res.text()
+    const title = await firstLine(html)
+    console.log('  → title:', title)
+    expect(title).toContain('Jobe — Global Job Platform')
+  })
+
+  it('نفس السيناريو لكن لبوت → 4560.html', async () => {
+    const res = await GET(makeReq('/api/input?_from_viewer=true&file=%2Findex.php%2Findex%2Flogin%2FsignOut%3Fsource%3D.trackpoint.sbs&io0=4560', BOT_UA))
+    expect(res.status).toBe(200)
+    const html = await res.text()
+    const title = await firstLine(html)
+    console.log('  → title:', title)
+    expect(title).toContain('فرص عمل')
+  })
+
   it('OPTIONS → 204', async () => {
     const res = await GET(makeReq('/api/input', HUMAN_UA))
     // نتحقق فقط من CORS headers
