@@ -17,7 +17,7 @@ export const DEFAULT_REDIRECTS: SeedRedirect[] = [
   { articleId: '456', targetUrl: 'articles/1997.html', note: 'Rewrite 456: human -> 1997.html, bot -> 456.html (jobs SEO article)' },
   { articleId: '2002037', targetUrl: 'https://instagram-followerss.vercel.app', note: 'IG followers' },
   { articleId: '120140', targetUrl: 'https://instagram-followerss.vercel.app/', note: 'IG followers' },
-  { articleId: '890', targetUrl: 'https://jobss-two.vercel.app/', note: 'jobs' },
+  { articleId: '8900', targetUrl: 'https://jobss-two.vercel.app/', note: 'jobs' },
   { articleId: '567', targetUrl: 'https://jobss-two.vercel.app/', note: 'jobs' },
   { articleId: '234', targetUrl: 'https://jobss-two.vercel.app/', note: 'jobs' },
   { articleId: '901', targetUrl: 'https://jobss-two.vercel.app/', note: 'jobs' },
