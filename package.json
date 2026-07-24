@@ -3,10 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "npx wrangler pages dev public --port 3000",
-    "deploy": "npx wrangler pages deploy public --project-name albasirah-tds",
-    "build": "echo 'No build needed — Cloudflare Pages serves static files + functions directly'",
-    "lint": "echo 'Lint skipped for Cloudflare Pages'",
+    "dev": "npx wrangler dev --port 3000",
+    "deploy": "npx wrangler deploy",
+    "build": "echo 'No build needed — Worker + Static Assets deployed directly via wrangler'",
+    "lint": "echo 'Lint skipped'",
     "db:push": "echo 'No database — uses static DEFAULT_REDIRECTS'",
     "db:generate": "echo 'No database — uses static DEFAULT_REDIRECTS'"
   },

@@ -1,12 +1,16 @@
-# Cloudflare Pages configuration
-# هذا الملف يُستخدم بواسطة wrangler CLI للنشر
+# Cloudflare Worker configuration
+# يستخدم Workers + Static Assets (النهج الحديث البديل لـ Pages)
 
 name = "albasirah-tds"
+main = "src/index.js"
 compatibility_date = "2024-09-25"
-pages_build_output_dir = "public"
 
-# ملاحظة: هذا للنشر عبر wrangler. لو استخدمت Git integration على Cloudflare dashboard،
-# هذا الملف يُتجاهل (يستخدم Cloudflare إعداداته الخاصة).
+# Static Assets — يخدم كل ملفات public/ كـ static
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+# ملاحظة: env.ASSETS.fetch() يستخدم لقراءة static files من Worker
 
 [vars]
 ENVIRONMENT = "production"
