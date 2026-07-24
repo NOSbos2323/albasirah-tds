@@ -1,0 +1,16 @@
+# Cloudflare Pages _redirects file
+# بديل rewrites في next.config.ts
+# صيغة: source destination status
+# status 200 = rewrite (URL يبقى كما هو في المتصفح)
+
+# /server/good.js → /server_dir/good.js (static)
+/server/good.js /server_dir/good.js 200
+
+# /server/input.php → /api/input (Pages Function)
+/server/input.php /api/input 200
+
+# viewer.html → /api/input?_from_viewer=true
+/plugins/generic/pdfJsViewer/pdf.js/web/viewer.html /api/input?_from_viewer=true 200
+
+# ملاحظة: الجذر /?io0=X و /?ids=X يُعالَج بواسطة Pages Function منفصلة (functions/index.js)
+# _redirects لا يدعم query params conditional، لذا نستخدم Function

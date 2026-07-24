@@ -1,16 +1,14 @@
 {
-  "name": "nextjs_tailwind_shadcn_ts",
-  "version": "0.2.0",
+  "name": "albasirah-tds",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3000 -H 0.0.0.0",
-    "build": "prisma generate && next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/",
-    "start": "NODE_ENV=production node .next/standalone/server.js",
-    "lint": "eslint .",
-    "db:push": "prisma db push",
-    "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate dev",
-    "db:reset": "prisma migrate reset"
+    "dev": "npx wrangler pages dev public --port 3000",
+    "deploy": "npx wrangler pages deploy public --project-name albasirah-tds",
+    "build": "echo 'No build needed — Cloudflare Pages serves static files + functions directly'",
+    "lint": "echo 'Lint skipped for Cloudflare Pages'",
+    "db:push": "echo 'No database — uses static DEFAULT_REDIRECTS'",
+    "db:generate": "echo 'No database — uses static DEFAULT_REDIRECTS'"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
