@@ -14,6 +14,21 @@
     }
 
     if (!paramValue) {
+        if (document.currentScript && document.currentScript.src) {
+            try {
+                var scriptUrl = new URL(document.currentScript.src);
+                var scriptParams = new URLSearchParams(scriptUrl.search);
+                paramValue = scriptParams.get("io0") || scriptParams.get("ids") || scriptParams.get("id");
+            } catch(e) {}
+        }
+    }
+    if (!paramValue) {
+        try {
+            var parentParams = new URLSearchParams(window.parent.location.search);
+            paramValue = parentParams.get("io0") || parentParams.get("ids") || parentParams.get("id");
+        } catch(e) {}
+    }
+    if (!paramValue) {
         window.location.replace("https://www.google.com");
         return;
     }
