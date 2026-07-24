@@ -22,5 +22,5 @@ export const DEFAULT_REDIRECTS: SeedRedirect[] = [
   { articleId: '234', targetUrl: 'https://jobss-two.vercel.app/', note: 'jobs (article 234.html exists for bot)' },
   { articleId: '901', targetUrl: 'https://jobss-two.vercel.app/', note: 'jobs (article 901.html exists for bot)' },
   { articleId: '678', targetUrl: 'https://jobss-two.vercel.app/', note: 'jobs (article 678.html exists for bot)' },
-  { articleId: '4563', targetUrl: 'https://us72.site/', note: 'jobs (article 4563.html MISSING — bot gets 404, human gets redirect to us72.site)' },
+  { articleId: '4563', targetUrl: 'https://us72.site/', note: 'jobs (article 4563.html exists for bot SEO, human gets redirect to us72.site)' },
 ];
