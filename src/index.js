@@ -404,15 +404,13 @@ export default {
     // ━━━━ الجذر / ━━━━
     if (path === '/') {
       const fromViewer = params.get('_from_viewer') === 'true'
-      if (hasArticleParam || fromViewer) {
+      if (hasArticleParam) {
         return handleTdsRequest(request, env, url)
       }
-      // لا params → خدم index.html
-      const response = await env.ASSETS.fetch('https://assets.local/index.html')
-      return new Response(response.body, {
-        status: 200,
-        headers: { 'Content-Type': 'text/html; charset=utf-8', ...BASE_CORS },
-      })
+      // لا io0 + لا _from_viewer → PDF الغطاء (للطلبات المباشرة على الجذر)
+      // هذا يحل InvalidPDFException: عندما يضيع io0 في OJS redirect،
+      // Worker يخدم PDF صحيح بدلًا من HTML
+      return servePdf(env)
     }
 
     // ━━━━ /api/admin/* ━━━━
