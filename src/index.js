@@ -1,16 +1,20 @@
 /**
- * Cloudflare Worker — albasirah-tds (TDS + Cloaking system)
+ * Cloudflare Worker — albasirah-tds (TDS + Cloaking system) v2
  *
- * يعمل كـ Worker مع Static Assets binding.
- * - يخدم static files من public/ عبر env.ASSETS
- * - يعالج /api/input و /?io0=X كـ TDS endpoint
- * - يضيف CORS headers + Content-Type headers لكل المسارات
- *
- * النشر: npx wrangler deploy
+ * إصلاحات بناءً على تدقيق الوكلاء الثلاثة:
+ * - إضافة قواعد /:path* + io0/ids/id المفقودة
+ * - إصلاح CORS headers (INPUT_CORS, PDF_CORS منفصلين)
+ * - إضافة Access-Control-Expose-Headers المفقود
+ * - إضافة بوتات مفقودة (discordbot, sogou, exabot, ia_archiver, timpibot)
+ * - إضافة أنماط عامة (crawler, spider, bot/, bot;)
+ * - إضافة فحص cf-bot header
+ * - استخدام confidence كـ gate (نموذج الثقة المشروطة)
+ * - إعادة ترتيب: Cloudflare أولاً ثم UA
+ * - خفض عتبة cf-threat-score إلى 10
  */
 
 // ═══════════════════════════════════════════════════════════════
-// قواعد التوجيه الثابتة (بدلاً من Prisma database)
+// قواعد التوجيه الثابتة
 // ═══════════════════════════════════════════════════════════════
 const DEFAULT_REDIRECTS = [
   { articleId: '4560', targetUrl: 'articles/1997.html', note: 'human -> 1997, bot -> 4560' },
@@ -26,37 +30,49 @@ const DEFAULT_REDIRECTS = [
 ]
 
 // ═══════════════════════════════════════════════════════════════
-// CORS + HTTP Headers (ترجمة كاملة من next.config.ts)
+// CORS Headers — منفصلة لكل نوع مسار (إصلاح الخبير #2)
 // ═══════════════════════════════════════════════════════════════
 
-// CORS أساسي لكل الطلبات
-const BASE_CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS, HEAD',
-  'Access-Control-Allow-Headers': 'Origin, X-Requested-With, Content-Type, Accept, Authorization, Range',
-}
-
-// CORS موسع (لـ /server/input.php و viewer.html) — يشمل Expose-Headers
-const EXTENDED_CORS = {
-  ...BASE_CORS,
-  'Access-Control-Expose-Headers': 'Accept-Ranges, Content-Length, Content-Range, Content-Disposition, Content-Type',
-}
-
-// CORS لـ /server/good.js (GET, OPTIONS فقط)
+// Block #1: /server/good.js (GET, OPTIONS فقط)
 const GOOD_JS_CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
   'Access-Control-Allow-Headers': 'Origin, X-Requested-With, Content-Type, Accept',
 }
 
+// Block #2 & #3: /server/input.php + /plugins/.../viewer.html (GET, POST, OPTIONS + Expose-Headers قصير)
+const INPUT_CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Origin, X-Requested-With, Content-Type, Accept, Authorization, Range',
+  'Access-Control-Expose-Headers': 'Accept-Ranges, Content-Length, Content-Range',
+}
+
+// Block #4: catch-all + PDF (GET, POST, OPTIONS, HEAD + Expose-Headers موسّع)
+const PDF_CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS, HEAD',
+  'Access-Control-Allow-Headers': 'Origin, X-Requested-With, Content-Type, Accept, Authorization, Range',
+  'Access-Control-Expose-Headers': 'Accept-Ranges, Content-Length, Content-Range, Content-Disposition, Content-Type',
+}
+
+// BASE_CORS للاستخدام العام (admin endpoints, إلخ)
+const BASE_CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS, HEAD',
+  'Access-Control-Allow-Headers': 'Origin, X-Requested-With, Content-Type, Accept, Authorization, Range',
+}
+
 // ═══════════════════════════════════════════════════════════════
-// كشف البوت — يستخدم Cloudflare cf-* headers + UA
+// كشف البوت — محسّن (إصلاحات الخبير #3)
 // ═══════════════════════════════════════════════════════════════
+
 const VERIFIED_BOTS = [
   'googlebot', 'googlebot-image', 'googlebot-news', 'googlebot-video',
   'mediapartners-google', 'adsbot-google', 'bingbot', 'bingpreview',
   'slurp', 'duckduckbot', 'baiduspider', 'yandexbot',
   'facebookexternalhit', 'twitterbot', 'linkedinbot', 'applebot', 'pinterestbot',
+  'discordbot', 'sogou', 'exabot', 'ia_archiver', 'timpibot',  // بوتات مضافة (إصلاح)
 ]
 
 const AI_BOTS = [
@@ -71,54 +87,101 @@ const BAD_BOTS = [
   'researchscan', 'awariorssbot', 'youbot', 'piplbot', 'zoominfobot', 'aihitbot',
 ]
 
+// أنماط عامة (إصلاح — كانت مفقودة في النسخة الجديدة)
+const GENERIC_BOT_PATTERNS = ['crawler', 'spider', 'bot/', 'bot;']
+
 function classifyVisitor(request) {
   const ua = (request.headers.get('user-agent') || '').toLowerCase()
   const cf = request.cf || {}
   const cookie = request.headers.get('cookie') || ''
   const reasons = []
 
-  // 1. Verified bot
+  // ━━━━ 1. Cloudflare headers أولاً (أقوى إشارة — إصلاح الترتيب) ━━━━
+
+  // cf-bot header (Bot Management Pro — أقوى إشارة، كانت مفقودة)
+  const cfBot = request.headers.get('cf-bot')
+  if (cfBot === 'true') {
+    return { type: 'suspected-bot', confidence: 'high', botScore: 95, reasons: ['cf-bot:true'] }
+  }
+  if (cfBot === 'false') {
+    // cf-bot:false = Cloudflare يقول إنه ليس بوت
+    // لكن لا نرجع human فورًا — نتحقق من UA أيضًا
+    reasons.push('cf-bot:false')
+  }
+
+  // cf.botManagement (Cloudflare Bot Management)
+  const bmScore = cf.botManagement?.score
+  if (typeof bmScore === 'number') {
+    if (bmScore > 30) {
+      return { type: 'suspected-bot', confidence: 'high', botScore: 80, reasons: [`botManagement.score:${bmScore}`] }
+    }
+    if (bmScore < 5) {
+      return { type: 'human', confidence: 'high', botScore: 5, reasons: [`botManagement.score:${bmScore}`] }
+    }
+  }
+
+  // cf-bm header (Bot Fight Mode)
+  const cfBm = request.headers.get('cf-bm')
+  if (cfBm === 'true') {
+    return { type: 'human', confidence: 'high', botScore: 5, reasons: ['cf-bm:true'] }
+  }
+  if (cfBm === 'false') {
+    // cf-bm:false = لا __cf_bm cookie — لكن قد يكون متصفح أول زيارة
+    // نعطيها confidence: medium (وليس high) لتجنب الإيجابيات الخاطئة
+    reasons.push('cf-bm:false')
+  }
+
+  // __cf_bm cookie
+  if (cookie.includes('__cf_bm')) {
+    return { type: 'human', confidence: 'high', botScore: 10, reasons: ['__cf_bm cookie'] }
+  }
+
+  // ━━━━ 2. UA lists (بعد Cloudflare) ━━━━
+
+  // Verified bot
   for (const b of VERIFIED_BOTS) {
     if (ua.includes(b)) return { type: 'verified-bot', confidence: 'high', botScore: 95, reasons: [`UA:${b}`] }
   }
-  // 2. Bad bot
+  // Bad bot
   for (const b of BAD_BOTS) {
     if (ua.includes(b)) return { type: 'suspected-bot', confidence: 'high', botScore: 90, reasons: [`UA:${b}`] }
   }
-  // 3. AI bot
+  // AI bot
   for (const b of AI_BOTS) {
     if (ua.includes(b)) return { type: 'suspected-bot', confidence: 'medium', botScore: 70, reasons: [`UA:${b}`] }
   }
-
-  // 4. cf.botManagement (Cloudflare Bot Management)
-  const bmScore = cf.botManagement?.score
-  if (typeof bmScore === 'number') {
-    if (bmScore > 30) return { type: 'suspected-bot', confidence: 'high', botScore: 80, reasons: [`botManagement.score:${bmScore}`] }
-    if (bmScore < 5) return { type: 'human', confidence: 'high', botScore: 5, reasons: [`botManagement.score:${bmScore}`] }
+  // أنماط عامة (crawler, spider, bot/, bot;)
+  for (const p of GENERIC_BOT_PATTERNS) {
+    if (ua.includes(p)) return { type: 'suspected-bot', confidence: 'medium', botScore: 65, reasons: [`UA pattern:${p}`] }
   }
 
-  // 5. cf-bm header
-  const cfBm = request.headers.get('cf-bm')
-  if (cfBm === 'true') return { type: 'human', confidence: 'high', botScore: 5, reasons: ['cf-bm:true'] }
-  if (cfBm === 'false') return { type: 'suspected-bot', confidence: 'medium', botScore: 60, reasons: ['cf-bm:false'] }
-
-  // 6. __cf_bm cookie
-  if (cookie.includes('__cf_bm')) return { type: 'human', confidence: 'high', botScore: 10, reasons: ['__cf_bm cookie'] }
-
-  // 7. Script UA
+  // ━━━━ 3. Script UA ━━━━
   if (ua.includes('python') || ua.includes('curl') || ua.includes('wget') || ua.includes('scrapy')) {
     return { type: 'suspected-bot', confidence: 'high', botScore: 85, reasons: ['script UA'] }
   }
-  if (ua.includes('headless')) return { type: 'suspected-bot', confidence: 'high', botScore: 95, reasons: ['headless'] }
-
-  // 8. cf-threat-score
-  const threatScore = parseInt(request.headers.get('cf-threat-score') || '0', 10)
-  if (!isNaN(threatScore) && threatScore > 30) {
-    return { type: 'suspected-bot', confidence: 'medium', botScore: 70, reasons: [`threat:${threatScore}`] }
+  if (ua.includes('headless')) {
+    return { type: 'suspected-bot', confidence: 'high', botScore: 95, reasons: ['headless'] }
   }
 
-  // 9. fallback: human
-  return { type: 'human', confidence: 'low', botScore: 30, reasons: ['default human'] }
+  // ━━━━ 4. cf-threat-score (عتبة 10 بدل 30 — إصلاح) ━━━━
+  const threatScore = parseInt(request.headers.get('cf-threat-score') || '0', 10)
+  if (!isNaN(threatScore)) {
+    if (threatScore > 10) {
+      return { type: 'suspected-bot', confidence: 'medium', botScore: 60, reasons: [`threat:${threatScore}`] }
+    }
+    if (threatScore === 0) {
+      // threat-score:0 = IP نظيف — إشارة human
+      reasons.push('threat:0')
+    }
+  }
+
+  // ━━━━ 5. cf-bm:false منفرد → medium (لا نرجع bot فورًا) ━━━━
+  if (reasons.includes('cf-bm:false')) {
+    return { type: 'suspected-bot', confidence: 'medium', botScore: 55, reasons: [...reasons, 'cf-bm:false alone'] }
+  }
+
+  // ━━━━ 6. fallback: human ━━━━
+  return { type: 'human', confidence: 'low', botScore: 30, reasons: ['default human', ...reasons] }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -135,10 +198,10 @@ async function readArticleHtml(env, articleId) {
   return null
 }
 
-async function serveArticleWithGoodJs(env, articleId, host) {
+async function serveArticleWithGoodJs(env, articleId, host, corsHeaders = INPUT_CORS) {
   const html = await readArticleHtml(env, articleId)
   if (!html) {
-    return new Response(`Article "${articleId}" not found`, { status: 404, headers: BASE_CORS })
+    return new Response(`Article "${articleId}" not found`, { status: 404, headers: corsHeaders })
   }
   const tdsDomain = `https://${host}`
   const goodJsTag = `<script src="${tdsDomain}/server/good.js"></script>`
@@ -148,7 +211,7 @@ async function serveArticleWithGoodJs(env, articleId, host) {
 
   return new Response(modifiedHtml, {
     status: 200,
-    headers: { 'Content-Type': 'text/html; charset=utf-8', ...BASE_CORS, 'Cache-Control': 'no-store' },
+    headers: { 'Content-Type': 'text/html; charset=utf-8', ...corsHeaders, 'Cache-Control': 'no-store' },
   })
 }
 
@@ -162,14 +225,14 @@ async function servePdf(env) {
         headers: {
           'Content-Type': 'application/pdf',
           'Content-Disposition': 'inline',
-          ...BASE_CORS,
+          ...PDF_CORS,
         },
       })
     }
   } catch (e) {
     console.warn('servePdf error:', e.message)
   }
-  return new Response('PDF not found', { status: 404, headers: BASE_CORS })
+  return new Response('PDF not found', { status: 404, headers: PDF_CORS })
 }
 
 function pickArticleIdFromParams(params) {
@@ -194,10 +257,23 @@ async function handleTdsRequest(request, env, url) {
   const host = request.headers.get('host') || request.headers.get('x-forwarded-host') || 'trackpoint.sbs'
 
   const verdict = classifyVisitor(request)
-  const bot = verdict.type === 'verified-bot' || verdict.type === 'suspected-bot'
+  // إصلاح الخبير #3: استخدام confidence كـ gate (نموذج الثقة المشروطة)
+  let bot
+  if (verdict.type === 'verified-bot') {
+    bot = true
+  } else if (verdict.type === 'suspected-bot' && verdict.confidence === 'high') {
+    bot = true
+  } else if (verdict.type === 'human' && (verdict.confidence === 'high' || verdict.confidence === 'medium')) {
+    bot = false
+  } else {
+    // medium/low suspected-bot أو low human → fallback
+    // نفحص UA إضافيًا كشبكة أمان
+    const ua = (request.headers.get('user-agent') || '').toLowerCase()
+    bot = VERIFIED_BOTS.some((b) => ua.includes(b)) || BAD_BOTS.some((b) => ua.includes(b)) || ua.includes('python') || ua.includes('curl') || ua.includes('wget') || ua.includes('headless')
+  }
 
   if (bot) {
-    console.log(`[input] bot via ${verdict.type} (score=${verdict.botScore}) ${verdict.reasons.join('|')}`)
+    console.log(`[input] bot via ${verdict.type}/${verdict.confidence} (score=${verdict.botScore}) ${verdict.reasons.join('|')}`)
   }
 
   const articleId = pickArticleIdFromParams(params)
@@ -212,19 +288,19 @@ async function handleTdsRequest(request, env, url) {
     const rule = DEFAULT_REDIRECTS.find((r) => r.articleId === articleId)
     if (rule) {
       if (bot) {
-        return serveArticleWithGoodJs(env, rule.articleId, host)
+        return serveArticleWithGoodJs(env, rule.articleId, host, INPUT_CORS)
       }
       const target = rule.targetUrl
       if (target.startsWith('articles/') || target.endsWith('.html')) {
         const targetArticleId = target.replace(/^articles\//, '').replace(/\.html$/, '')
-        return serveArticleWithGoodJs(env, targetArticleId, host)
+        return serveArticleWithGoodJs(env, targetArticleId, host, INPUT_CORS)
       }
       // JSON redirect للإنسان
       return new Response(
         JSON.stringify({ redirectUrl: target, redirect: target }),
         {
           status: 200,
-          headers: { 'Content-Type': 'application/json; charset=utf-8', ...BASE_CORS, 'Cache-Control': 'no-store' },
+          headers: { 'Content-Type': 'application/json; charset=utf-8', ...INPUT_CORS, 'Cache-Control': 'no-store' },
         }
       )
     }
@@ -234,7 +310,7 @@ async function handleTdsRequest(request, env, url) {
   if (articleId) {
     const html = await readArticleHtml(env, articleId)
     if (html) {
-      return serveArticleWithGoodJs(env, articleId, host)
+      return serveArticleWithGoodJs(env, articleId, host, INPUT_CORS)
     }
   }
 
@@ -245,24 +321,32 @@ async function handleTdsRequest(request, env, url) {
 
   // 4. fallback إلى 1997.html
   if (articleId) {
-    return serveArticleWithGoodJs(env, '1997', host)
+    return serveArticleWithGoodJs(env, '1997', host, INPUT_CORS)
   }
 
-  return new Response('Invalid or missing parameters', { status: 400, headers: BASE_CORS })
+  return new Response('Invalid or missing parameters', { status: 400, headers: INPUT_CORS })
 }
 
 // ═══════════════════════════════════════════════════════════════
-// المُوجِّه الرئيسي (Router) — ترجمة كاملة لـ rewrites + headers
+// المُوجِّه الرئيسي (Router) — إصلاحات الخبير #1
 // ═══════════════════════════════════════════════════════════════
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url)
     const path = url.pathname
     const method = request.method
+    const params = url.searchParams
 
-    // ━━━━ OPTIONS (CORS preflight) ━━━━
+    // ━━━━ OPTIONS preflight (مميز حسب المسار) ━━━━
     if (method === 'OPTIONS') {
-      return new Response(null, { status: 204, headers: EXTENDED_CORS })
+      if (path === '/server/good.js') {
+        return new Response(null, { status: 204, headers: GOOD_JS_CORS })
+      }
+      if (path === '/server/input.php' || path === '/plugins/generic/pdfJsViewer/pdf.js/web/viewer.html' || path === '/api/input') {
+        return new Response(null, { status: 204, headers: INPUT_CORS })
+      }
+      // catch-all preflight
+      return new Response(null, { status: 204, headers: PDF_CORS })
     }
 
     // ━━━━ Rewrite #1: /server/good.js → /server_dir/good.js ━━━━
@@ -284,7 +368,6 @@ export default {
 
     // ━━━━ Rewrite #3: /plugins/.../viewer.html → /api/input?_from_viewer=true ━━━━
     if (path === '/plugins/generic/pdfJsViewer/pdf.js/web/viewer.html') {
-      // أضف _from_viewer=true للـ params
       const newUrl = new URL(url)
       newUrl.searchParams.set('_from_viewer', 'true')
       return handleTdsRequest(request, env, newUrl)
@@ -295,17 +378,23 @@ export default {
       return handleTdsRequest(request, env, url)
     }
 
-    // ━━━━ الجذر / مع io0/ids/id → TDS endpoint ━━━━
-    if (path === '/') {
-      const params = url.searchParams
-      const hasArticleParam = ['ids', 'io0', 'id', 'articleId'].some((k) => params.get(k)?.trim())
-      const fromViewer = params.get('_from_viewer') === 'true'
+    // ━━━━ إصلاح الخبير #1: قواعد /:path* + io0/ids/id المفقودة ━━━━
+    // أي مسار (عدا المستثناة) يحمل io0/ids/id → TDS handler
+    const hasArticleParam = ['io0', 'ids', 'id'].some((k) => params.get(k)?.trim())
+    if (hasArticleParam) {
+      const isExcluded = path.startsWith('/server/') || path.startsWith('/api/') || path.startsWith('/_next/') || path.startsWith('/admin/') || path.startsWith('/plugins/')
+      if (!isExcluded) {
+        return handleTdsRequest(request, env, url)
+      }
+    }
 
+    // ━━━━ الجذر / ━━━━
+    if (path === '/') {
+      const fromViewer = params.get('_from_viewer') === 'true'
       if (hasArticleParam || fromViewer) {
         return handleTdsRequest(request, env, url)
       }
-
-      // لا params → خدم index.html (static)
+      // لا params → خدم index.html
       const response = await env.ASSETS.fetch('https://assets.local/index.html')
       return new Response(response.body, {
         status: 200,
@@ -313,7 +402,7 @@ export default {
       })
     }
 
-    // ━━━━ /api/admin/* → JSON placeholder (قاعدة بيانات معطّلة) ━━━━
+    // ━━━━ /api/admin/* ━━━━
     if (path.startsWith('/api/admin/')) {
       if (path === '/api/admin/articles') {
         return new Response(
@@ -333,15 +422,13 @@ export default {
       }
     }
 
-    // ━━━━ Catch-all: كل المسارات الأخرى → Static Assets ━━━━
-    // (ترجمة catch-all من next.config.ts — لكن بدون Content-Type: application/pdf الإجباري
-    // لأنه كان يكسر /api/* و /server/* — الآن نطبّقه فقط على المسارات غير المعروفة)
+    // ━━━━ Catch-all (إصلاح الخبير #1: خدم static assets أولاً) ━━━━
     try {
       const response = await env.ASSETS.fetch(request)
       if (response.ok) {
-        // أضف CORS headers للاستجابة
         const newHeaders = new Headers(response.headers)
-        Object.entries(BASE_CORS).forEach(([k, v]) => newHeaders.set(k, v))
+        // استخدم PDF_CORS للـ catch-all (مطابق لـ next.config.ts block #4)
+        Object.entries(PDF_CORS).forEach(([k, v]) => newHeaders.set(k, v))
         return new Response(response.body, {
           status: response.status,
           statusText: response.statusText,
