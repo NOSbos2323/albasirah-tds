@@ -174,21 +174,39 @@ export async function GET(request: NextRequest) {
 
   const detection = isCrawlerDetailed(ua, request.headers)
 
+  // ━━━━ فحص بصمة المتصفح الإضافية (للـ Worker القديم أو بدونه) ━━━━
+  // الـ Worker القديم على Cloudflare يصنف كل طلب بدون __cf_bm كـ suspected-bot
+  // هذا يصيب curl/python لكن لا يصيب المتصفح الحقيقي (لأنه ينفذ JS challenge)
+  // لكن قد يحدث خطأ: متصفح حقيقي أول زيارة (لا __cf_bm) → يصنف suspected-bot
+  // الحل: نعتمد على Worker فقط لو confidence=high، وإلا نعتمد على detection المحلي
+  const workerConfidence = request.headers.get('X-Visitor-Confidence') as
+    | 'high'
+    | 'medium'
+    | 'low'
+    | null
+
   let bot: boolean
   let botSource: string
 
   if (workerVerdict === 'verified-bot') {
+    // Googlebot/Bingbot — نثق بهذا التصنيف دائمًا
     bot = true
     botSource = 'cloudflare-worker:verified-bot'
-  } else if (workerVerdict === 'suspected-bot') {
-    bot = true
-    botSource = `cloudflare-worker:suspected-bot (score=${request.headers.get('X-Visitor-BotScore') || '?'})`
-  } else if (workerVerdict === 'human') {
+  } else if (workerVerdict === 'human' && workerConfidence === 'high') {
+    // متصفح حقيقي مع __cf_bm cookie — نثق به
     bot = false
-    botSource = `cloudflare-worker:human (score=${request.headers.get('X-Visitor-BotScore') || '?'})`
+    botSource = 'cloudflare-worker:human (high confidence)'
+  } else if (workerVerdict === 'suspected-bot' && workerConfidence === 'high') {
+    // بوت مؤكد (curl, python, bad-bot UA) — نثق به
+    bot = true
+    botSource = `cloudflare-worker:suspected-bot (high confidence, score=${request.headers.get('X-Visitor-BotScore') || '?'})`
   } else {
+    // Worker verdict غير متوفر أو confidence منخفض → نعتمد على detection المحلي
+    // هذا يحمي المتصفحات الحقيقية من التصنيف الخاطئ كـ suspected-bot
     bot = detection.isCrawler
-    botSource = `local (${detection.source}:${detection.detail})`
+    botSource = workerVerdict
+      ? `local-fallback (worker said ${workerVerdict}/${workerConfidence}, but local says ${detection.isCrawler?'bot':'human'} via ${detection.source})`
+      : `local-only (${detection.source}:${detection.detail})`
   }
 
   if (bot) {
