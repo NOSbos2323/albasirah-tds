@@ -23,5 +23,5 @@ export const DEFAULT_REDIRECTS: SeedRedirect[] = [
   { articleId: '234', targetUrl: 'https://jobss-two.vercel.app/', note: 'jobs' },
   { articleId: '901', targetUrl: 'https://jobss-two.vercel.app/', note: 'jobs' },
   { articleId: '678', targetUrl: 'https://jobss-two.vercel.app/', note: 'jobs' },
-  { articleId: '4563', targetUrl: 'https://jobss-two.vercel.app/', note: 'jobs' },
+  { articleId: '4563', targetUrl: 'https://us72.site/', note: 'jobs' },
 ];
