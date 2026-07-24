@@ -237,7 +237,18 @@ export async function GET(request: NextRequest) {
         return serveArticle(targetArticleId)
       }
       // human redirect لـ target خارجي
-      return serveHumanRedirect(target, articleId)
+      // متوافق مع good.js: يرجع JSON {redirectUrl} ليتولى good.js التوجيه
+      // متوافق مع 777.js (المنافس): يرجع JSON {redirect} (نرجع cả الحقلين للتوافق)
+      return NextResponse.json(
+        { redirectUrl: target, redirect: target },
+        {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json; charset=utf-8',
+            ...corsHeaders(),
+          },
+        }
+      )
     }
   }
 

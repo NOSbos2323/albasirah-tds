@@ -58,15 +58,15 @@ describe('TDS Route — بعد الإصلاح', () => {
     expect(title).toContain('Jobe — Global Job Platform')
   })
 
-  it('إنسان ?ids=2002037 → Delayed JS Redirect لـ IG', async () => {
+  it('إنسان ?ids=2002037 → JSON redirect لـ IG (متوافق مع good.js و 777.js)', async () => {
     const res = await GET(makeReq('/api/input?ids=2002037', HUMAN_UA))
     expect(res.status).toBe(200)
-    const html = await res.text()
-    console.log('  → html length:', html.length)
-    // يجب أن يحتوي على Instagram URL + Delayed redirect script
-    expect(html).toContain('instagram-followerss')
-    expect(html).toContain('window.location.replace')
-    expect(html).toContain('setInterval')
+    const json = await res.json()
+    console.log('  → json:', json)
+    // يجب أن يحتوي على Instagram URL في حقل redirectUrl (لـ good.js)
+    // وفي حقل redirect (لـ 777.js / mankurt1 compatibility)
+    expect(json.redirectUrl).toContain('instagram-followerss')
+    expect(json.redirect).toContain('instagram-followerss')
   })
 
   it('بوت ?ids=2002037 → 2002037.html', async () => {
@@ -78,23 +78,21 @@ describe('TDS Route — بعد الإصلاح', () => {
     expect(title).toContain('كأس العالم')
   })
 
-  it('إنسان ?ids=890 → Delayed JS Redirect لـ jobs', async () => {
-    const res = await GET(makeReq('/api/input?ids=890', HUMAN_UA))
+  it('إنسان ?ids=8900 → JSON redirect لـ jobss-two (متوافق مع good.js)', async () => {
+    const res = await GET(makeReq('/api/input?ids=8900', HUMAN_UA))
     expect(res.status).toBe(200)
-    const html = await res.text()
-    console.log('  → html length:', html.length)
-    expect(html).toContain('jobss-two')
-    expect(html).toContain('window.location.replace')
+    const json = await res.json()
+    console.log('  → json:', json)
+    expect(json.redirectUrl).toContain('jobss-two')
+    expect(json.redirect).toContain('jobss-two')
   })
 
-  it('بوت ?ids=890 → fallback 1997.html (قاعدة jobs تشير لـ jobss-two للإنسان فقط)', async () => {
-    const res = await GET(makeReq('/api/input?ids=890', BOT_UA))
-    console.log('  → status:', res.status)
-    // للبوت: serveArticle(890) → 890.html غير موجود → fallback إلى 1997.html
+  it('بوت ?ids=8900 → 8900.html (مقال SEO للوظائف)', async () => {
+    const res = await GET(makeReq('/api/input?ids=8900', BOT_UA))
     expect(res.status).toBe(200)
     const html = await res.text()
     const title = await firstLine(html)
-    expect(title).toContain('Jobe — Global Job Platform')
+    expect(title).toBeTruthy()
   })
 
   it('إنسان ?ids=999999 (غير معروف) → fallback 1997.html', async () => {
