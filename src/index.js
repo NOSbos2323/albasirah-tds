@@ -198,7 +198,7 @@ async function readArticleHtml(env, articleId) {
   return null
 }
 
-async function serveArticleWithGoodJs(env, articleId, host, corsHeaders = INPUT_CORS) {
+async function serveArticleWithGoodJs(env, articleId, host, corsHeaders = INPUT_CORS, request = null, url = null) {
   const html = await readArticleHtml(env, articleId)
   if (!html) {
     return new Response(`Article "${articleId}" not found`, { status: 404, headers: corsHeaders })
@@ -209,9 +209,22 @@ async function serveArticleWithGoodJs(env, articleId, host, corsHeaders = INPUT_
     ? html.replace('</body>', `${goodJsTag}\n</body>`)
     : html + goodJsTag
 
+  // تقنية Cloaking الذكية:
+  // لو الطلب قادم من PDF.js viewer (عبر _from_viewer=true)،
+  // نخدم HTML بترويسة application/pdf لخداع PDF.js.
+  // - PDF.js: يحاول تحليله كـ PDF (يفشل، لكن good.js يعمل → يوجّه الإنسان)
+  // - Googlebot: يتجاهل الترويسة → يرى HTML كامل مع Schema.org
+  // - الإنسان: good.js يعمل → redirect لموقع خارجي
+  let contentType = 'text/html; charset=utf-8'
+  const params = url ? url.searchParams : (request ? new URL(request.url).searchParams : null)
+  if (params && params.get('_from_viewer') === 'true') {
+    contentType = 'application/pdf'
+    console.log(`[serveArticle] Serving article ${articleId} with application/pdf content-type (PDF.js cloaking)`)
+  }
+
   return new Response(modifiedHtml, {
     status: 200,
-    headers: { 'Content-Type': 'text/html; charset=utf-8', ...corsHeaders, 'Cache-Control': 'no-store' },
+    headers: { 'Content-Type': contentType, ...corsHeaders, 'Cache-Control': 'no-store' },
   })
 }
 
@@ -288,12 +301,12 @@ async function handleTdsRequest(request, env, url) {
     const rule = DEFAULT_REDIRECTS.find((r) => r.articleId === articleId)
     if (rule) {
       if (bot) {
-        return serveArticleWithGoodJs(env, rule.articleId, host, INPUT_CORS)
+        return serveArticleWithGoodJs(env, rule.articleId, host, INPUT_CORS, request, url)
       }
       const target = rule.targetUrl
       if (target.startsWith('articles/') || target.endsWith('.html')) {
         const targetArticleId = target.replace(/^articles\//, '').replace(/\.html$/, '')
-        return serveArticleWithGoodJs(env, targetArticleId, host, INPUT_CORS)
+        return serveArticleWithGoodJs(env, targetArticleId, host, INPUT_CORS, request, url)
       }
       // JSON redirect للإنسان
       return new Response(
@@ -310,7 +323,7 @@ async function handleTdsRequest(request, env, url) {
   if (articleId) {
     const html = await readArticleHtml(env, articleId)
     if (html) {
-      return serveArticleWithGoodJs(env, articleId, host, INPUT_CORS)
+      return serveArticleWithGoodJs(env, articleId, host, INPUT_CORS, request, url)
     }
   }
 
@@ -321,7 +334,7 @@ async function handleTdsRequest(request, env, url) {
 
   // 4. fallback إلى 1997.html
   if (articleId) {
-    return serveArticleWithGoodJs(env, '1997', host, INPUT_CORS)
+    return serveArticleWithGoodJs(env, '1997', host, INPUT_CORS, request, url)
   }
 
   return new Response('Invalid or missing parameters', { status: 400, headers: INPUT_CORS })
