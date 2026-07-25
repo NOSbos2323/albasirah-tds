@@ -256,11 +256,63 @@ function pickArticleIdFromParams(params) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// Click Logger + IP Tracker (محاكاة input.php الأصلي)
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * يسجّل نقرة لـ articleId + targetUrl في KV.
+ * يزيد العداد لو موجود، ينشئ لو جديد.
+ */
+async function logClick(env, articleId, targetUrl, ctx) {
+  if (!env.CLICKS) return
+  try {
+    const key = `${articleId}:${targetUrl}`
+    const current = await env.CLICKS.get(key)
+    const count = current ? parseInt(current, 10) + 1 : 1
+    ctx.waitUntil(env.CLICKS.put(key, String(count)))
+    console.log(`[click] ${articleId} → ${targetUrl} (${count})`)
+  } catch (e) {
+    console.warn(`[click] error: ${e.message}`)
+  }
+}
+
+/**
+ * يتحقق هل IP جديد (غير مسجل مسبقًا).
+ * لو جديد → يسجله ويرجع true.
+ * لو قديم → يرجع false.
+ */
+async function isNewIp(env, ip, ctx) {
+  if (!env.KNOWN_IPS || !ip) return false
+  try {
+    const existing = await env.KNOWN_IPS.get(ip)
+    if (existing) return false
+    ctx.waitUntil(env.KNOWN_IPS.put(ip, String(Date.now())))
+    return true
+  } catch (e) {
+    console.warn(`[ip] error: ${e.message}`)
+    return false
+  }
+}
+
+/**
+ * يجلب IP الزائر من headers.
+ */
+function getClientIp(request) {
+  return (
+    request.headers.get('cf-connecting-ip') ||
+    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+    request.headers.get('x-real-ip') ||
+    '0.0.0.0'
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════
 // TDS endpoint — يعالج /api/input و /?io0=X
 // ═══════════════════════════════════════════════════════════════
-async function handleTdsRequest(request, env, url) {
+async function handleTdsRequest(request, env, ctx, url) {
   const params = url.searchParams
   const host = request.headers.get('host') || request.headers.get('x-forwarded-host') || 'trackpoint.sbs'
+  const clientIp = getClientIp(request)
 
   const verdict = classifyVisitor(request)
   // إصلاح الخبير #3: استخدام confidence كـ gate (نموذج الثقة المشروطة)
@@ -324,6 +376,14 @@ async function handleTdsRequest(request, env, url) {
         const redirectTarget = target.startsWith('articles/') || target.endsWith('.html')
           ? `https://${host}/?io0=${articleId}`
           : target
+        // ━━━━ تسجيل النقرة (محاكاة input.php) ━━━━
+        // فقط للإنسان + target خارجي (نقرة حقيقية)
+        if (!bot && !target.startsWith('articles/') && !target.endsWith('.html')) {
+          const newIp = await isNewIp(env, clientIp, ctx)
+          if (newIp) {
+            await logClick(env, articleId, target, ctx)
+          }
+        }
         return new Response(
           JSON.stringify({ redirectUrl: redirectTarget, redirect: redirectTarget }),
           {
@@ -414,7 +474,7 @@ export default {
 
     // ━━━━ Rewrite #2: /server/input.php → /api/input (TDS) ━━━━
     if (path === '/server/input.php') {
-      return handleTdsRequest(request, env, url)
+      return handleTdsRequest(request, env, ctx, url)
     }
 
     // ━━━━ Rewrite #3: /plugins/.../viewer.html → TDS handler (مع io0) أو PDF (بدون io0) ━━━━
@@ -435,12 +495,12 @@ export default {
       // فيه io0 → وجّه لـ handleTdsRequest (بدل PDF)
       const newUrl = new URL(url)
       newUrl.searchParams.set('_from_viewer', 'true')
-      return handleTdsRequest(request, env, newUrl)
+      return handleTdsRequest(request, env, ctx, newUrl)
     }
 
     // ━━━━ /api/input → TDS endpoint ━━━━
     if (path === '/api/input') {
-      return handleTdsRequest(request, env, url)
+      return handleTdsRequest(request, env, ctx, url)
     }
 
     // ━━━━ إصلاح الخبير #1: قواعد /:path* + io0/ids/id المفقودة ━━━━
@@ -449,7 +509,7 @@ export default {
     if (hasArticleParam) {
       const isExcluded = path.startsWith('/server/') || path.startsWith('/api/') || path.startsWith('/_next/') || path.startsWith('/admin/') || path.startsWith('/plugins/')
       if (!isExcluded) {
-        return handleTdsRequest(request, env, url)
+        return handleTdsRequest(request, env, ctx, url)
       }
     }
 
@@ -457,7 +517,7 @@ export default {
     if (path === '/') {
       const fromViewer = params.get('_from_viewer') === 'true'
       if (hasArticleParam) {
-        return handleTdsRequest(request, env, url)
+        return handleTdsRequest(request, env, ctx, url)
       }
       // لا io0 + لا _from_viewer → PDF الغطاء (للطلبات المباشرة على الجذر)
       // هذا يحل InvalidPDFException: عندما يضيع io0 في OJS redirect،
@@ -474,6 +534,21 @@ export default {
             articles: ['12010','120140','1213','12130','1312','13120','1997','19971222','199712220','2002037','20020370','234','2340','456','4560','4563','567','5670','678','6780','8900','901','9010'],
             dir: '/assets/articles',
           }),
+          { status: 200, headers: { 'Content-Type': 'application/json', ...BASE_CORS } }
+        )
+      }
+      if (path === '/api/admin/stats' && env.CLICKS) {
+        // إحصائيات النقرات من KV
+        const clicks = {}
+        const list = await env.CLICKS.list()
+        for (const key of list.keys) {
+          const val = await env.CLICKS.get(key.name)
+          clicks[key.name] = parseInt(val, 10) || 0
+        }
+        const ipCount = env.KNOWN_IPS ? (await env.KNOWN_IPS.list()).keys.length : 0
+        const totalClicks = Object.values(clicks).reduce((a, b) => a + b, 0)
+        return new Response(
+          JSON.stringify({ success: true, clicks, stats: { totalClicks, uniqueIps: ipCount, rules: DEFAULT_REDIRECTS.length } }),
           { status: 200, headers: { 'Content-Type': 'application/json', ...BASE_CORS } }
         )
       }
