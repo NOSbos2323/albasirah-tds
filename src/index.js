@@ -300,15 +300,37 @@ async function handleTdsRequest(request, env, url) {
   if (articleId) {
     const rule = DEFAULT_REDIRECTS.find((r) => r.articleId === articleId)
     if (rule) {
+      // Bot: خدم مقال articleId
       if (bot) {
         return serveArticleWithGoodJs(env, rule.articleId, host, INPUT_CORS, request, url)
       }
+      // ━━━━ Human: /api/input يجب أن يرجع JSON دائمًا (لا HTML) ━━━━
+      // هذا يمنع الحلقة اللانهائية: good.js → fetch /api/input → HTML → document.write → good.js → loop
+      // /api/input و /server/input.php → JSON redirect دائمًا للإنسان
+      const isApiCall = url.pathname === '/api/input' || url.pathname === '/server/input.php'
       const target = rule.targetUrl
+      
+      if (isApiCall) {
+        // /api/input: JSON redirect دائمًا للإنسان (حتى لو target داخلية)
+        // لو target داخلية (articles/1997.html)، نحوّلها لـ JSON redirect
+        const redirectTarget = target.startsWith('articles/') || target.endsWith('.html')
+          ? `https://${host}/?io0=${articleId}`  // redirect لصفحة المقال مباشرة
+          : target
+        return new Response(
+          JSON.stringify({ redirectUrl: redirectTarget, redirect: redirectTarget }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json; charset=utf-8', ...INPUT_CORS, 'Cache-Control': 'no-store' },
+          }
+        )
+      }
+      
+      // /?io0=X (زيارة مباشرة في المتصفح): خدم HTML للإنسان
       if (target.startsWith('articles/') || target.endsWith('.html')) {
         const targetArticleId = target.replace(/^articles\//, '').replace(/\.html$/, '')
         return serveArticleWithGoodJs(env, targetArticleId, host, INPUT_CORS, request, url)
       }
-      // JSON redirect للإنسان
+      // JSON redirect للإنسان (target خارجي)
       return new Response(
         JSON.stringify({ redirectUrl: target, redirect: target }),
         {
