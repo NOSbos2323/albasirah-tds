@@ -430,9 +430,20 @@ async function handleTdsRequest(request, env, ctx, url) {
     return servePdf(env)
   }
 
-  // 4. fallback إلى 1997.html
+  // 4. fallback — مطابق لـ input.php: redirect إلى google.com للمقال المفقود
   if (articleId) {
-    return serveArticleWithGoodJs(env, '1997', host, INPUT_CORS, request, url, bot)
+    // البوت: لا مقال → google.com
+    if (bot) {
+      return new Response(
+        JSON.stringify({ redirectUrl: 'https://www.google.com' }),
+        { status: 200, headers: { 'Content-Type': 'application/json; charset=utf-8', ...INPUT_CORS } }
+      )
+    }
+    // الإنسان: لا مقال → google.com
+    return new Response(
+      JSON.stringify({ redirectUrl: 'https://www.google.com' }),
+      { status: 200, headers: { 'Content-Type': 'application/json; charset=utf-8', ...INPUT_CORS } }
+    )
   }
 
   return new Response('Invalid or missing parameters', { status: 400, headers: INPUT_CORS })
