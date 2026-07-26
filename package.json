@@ -1,9 +1,0 @@
-{
-  "name": "albasirah-tds",
-  "version": "1.0.0",
-  "private": true,
-  "scripts": {
-    "dev": "npx wrangler dev --port 3000",
-    "deploy": "npx wrangler deploy"
-  }
-}

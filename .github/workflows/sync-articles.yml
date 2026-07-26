@@ -1,0 +1,72 @@
+name: Sync Articles to Cloudflare KV
+
+# هذا الـ workflow يرفع المقالات من articles/ إلى Cloudflare KV namespace "ARTICLES"
+# عند كل push إلى main، يضمن أن المقالات على الموقع محدّثة مع المستودع
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'articles/**'
+  workflow_dispatch:
+
+jobs:
+  sync-to-kv:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install requests
+        run: pip install requests
+
+      - name: Upload articles to Cloudflare KV
+        env:
+          CF_API_KEY: ${{ secrets.CF_API_KEY }}
+          CF_EMAIL: ${{ secrets.CF_EMAIL }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          ARTICLES_NS_ID: ${{ secrets.ARTICLES_NS_ID }}
+        run: |
+          python3 - <<'PYEOF'
+          import os
+          import requests
+          import json
+          import glob
+
+          BASE = "https://api.cloudflare.com/client/v4"
+          ACCOUNT_ID = os.environ["CF_ACCOUNT_ID"]
+          NS_ID = os.environ["ARTICLES_NS_ID"]
+          HEADERS = {
+              "X-Auth-Email": os.environ["CF_EMAIL"],
+              "X-Auth-Key": os.environ["CF_API_KEY"],
+              "Content-Type": "application/json",
+          }
+
+          articles = glob.glob("articles/*.html")
+          print(f"Found {len(articles)} articles to upload")
+
+          success = 0
+          for article_path in sorted(articles):
+              article_id = article_path.replace("articles/", "").replace(".html", "")
+              with open(article_path, "r", encoding="utf-8") as f:
+                  html = f.read()
+
+              url = f"{BASE}/accounts/{ACCOUNT_ID}/storage/kv/namespaces/{NS_ID}/values/{article_id}"
+              r = requests.put(url, headers=HEADERS, data=html.encode("utf-8"), timeout=30)
+
+              if r.status_code == 200:
+                  print(f"  ✅ {article_id:12} ({len(html):6} bytes)")
+                  success += 1
+              else:
+                  print(f"  ❌ {article_id:12} — HTTP {r.status_code}: {r.text[:100]}")
+
+          print(f"\nSummary: {success}/{len(articles)} uploaded")
+          if success != len(articles):
+              exit(1)
+          print("✅ All articles synced to KV")
+          PYEOF

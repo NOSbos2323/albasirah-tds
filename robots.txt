@@ -1,0 +1,7 @@
+# robots.txt — مستودع GitHub
+#
+# هذا الملف يخفي المستودع عن محركات البحث
+# (المقالات تُخدَم عبر Cloudflare Worker، لا حاجة لفهرسة المستودع)
+
+User-agent: *
+Disallow: /
