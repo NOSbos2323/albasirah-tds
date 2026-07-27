@@ -1,61 +1,75 @@
-# robots.txt — مستودع GitHub
-# يخفي المستودع عن محركات البحث
-# (المقالات تُخدَم عبر Cloudflare Worker، لا حاجة لفهرسة المستودع)
-# هذا الملف يُستبدل بـ public/robots.txt عند الـ deploy
-
 # ═══════════════════════════════════════════════════════════════
-# ملفات تجاهل — يخفي كل شيء ما عدا المقالات
+# .gitignore محدّث — حماية شاملة
 # ═══════════════════════════════════════════════════════════════
-# الاستراتيجية:
-# - المقالات في articles/ فقط تُرفع لـ GitHub
-# - كل شيء آخر (Worker, PDF, scripts, إعدادات) يبقى محليًا
-# - تُرفع لـ Cloudflare فقط عند npx wrangler deploy
 
-# ━━━━ إخفاء كود Worker (يبقى محليًا، يُرفع لـ Cloudflare فقط) ━━━━
+# ━━━━ حماية ملفات Git الحساسة ━━━━
+/.git/
+/.git/config
+/.git/HEAD
+/.git/
+**/.git/
+
+# ━━━━ حماية ملفات البيئة والأسرار ━━━━
+.env*
+!.env.example
+*.env
+.env.local
+.env.production
+.env.development
+
+# ━━━━ حماية مفاتيح SSH و AWS ━━━━
+/.ssh/
+/.aws/
+**/.ssh/
+**/.aws/
+*.pem
+*.key
+*.cert
+
+# ━━━━ حماية ملفات الإعدادات الحساسة ━━━━
+/.htaccess
+/.htpasswd
+/wp-config.php
+/wp-config.php.bak
+/config.json
+/config.xml
+/secret*
+/server.key
+/composer.json
+/package-lock.json
+/yarn.lock
+/.npmrc
+/.docker/
+/Dockerfile
+/.gitlab-ci.yml
+/.github/
+/jenkins/
+/phpinfo.php
+/info.php
+/test.php
+/shell.php
+/eval.php
+/backup*
+*.sql
+*.bak
+*.old
+*.save
+
+# ━━━━ إخفاء كود Worker (يبقى محليًا) ━━━━
 /src/
 /wrangler.toml
 /package.json
-/package-lock.json
-/yarn.lock
-/pnpm-lock.yaml
 /.wrangler/
 
-# ━━━━ إخفاء Static Assets الحساسة (PDF الخبيث، server_dir) ━━━━
+# ━━━━ إخفاء Static Assets الحساسة ━━━━
 /public/
-!/public/robots.txt
 
-# ━━━━ إخفاء CNAME (يحتوي على نطاق المشروع) ━━━━
-/CNAME
-
-# ━━━━ إخفاء ملفات النظام والإعدادات ━━━━
+# ━━━━ ملفات النظام والإعدادات ━━━━
 .DS_Store
-*.pem
 *.log
-.env*
-!.env.example
-
-# ━━━━ إخفاء node_modules ━━━━
-node_modules/
-/.pnp
-.pnp.*
-.yarn/*
-!.yarn/patches
-!.yarn/plugins
-!.yarn/releases
-!.yarn/versions
-
-# ━━━━ إخفاء ملفات التطوير المحلية ━━━━
-/coverage
-/.next/
-/out/
-/build
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
-*.tsbuildinfo
-next-env.d.ts
-local-*
+*.tmp
+*.swp
+*~
 .claude
 .z-ai-config
 server.log
@@ -64,7 +78,7 @@ dev.out.log
 test
 prompt
 
-# ━━━━ إخفاء بيانات الـ sandbox ━━━━
+# ━━━━ بيانات الـ sandbox ━━━━
 /skills/
 /db/
 /prisma/
@@ -77,7 +91,23 @@ prompt
 /download/
 /scripts/
 
-# ━━━━ ملاحظة: المجلدات المسموح بها (لا تُضاف هنا، تُترك افتراضيًا) ━━━━
-# /articles/ ← المقالات (تُرفع لـ GitHub)
-# /README.md ← التوثيق
-# /robots.txt ← robots.txt الخاص بـ GitHub (يخفي المستودع عن البحث)
+# ━━━━ Node.js ━━━━
+node_modules/
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+*.tsbuildinfo
+next-env.d.ts
+local-*
+.vercel
+
+# ━━━━ المسموح فقط: articles/ ━━━━
+# (لا حاجة لإضافة استثناء — articles/ ليس محجوبًا)
